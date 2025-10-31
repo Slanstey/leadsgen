@@ -1,7 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { mockLeads } from "@/data/mockData";
-import { Lead, LeadStatus } from "@/types/lead";
+import { Lead, LeadStatus, Comment } from "@/types/lead";
 import { LeadsTable } from "@/components/LeadsTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,43 +18,164 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BarChart3, Settings, Search, Menu, Home } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const Index = () => {
   const navigate = useNavigate();
-  const [leads, setLeads] = useState<Lead[]>(mockLeads);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
   const [companySearch, setCompanySearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleStatusChange = (leadId: string, newStatus: LeadStatus) => {
-    setLeads((prevLeads) =>
-      prevLeads.map((lead) =>
-        lead.id === leadId
-          ? { ...lead, status: newStatus, updatedAt: new Date() }
-          : lead
-      )
-    );
+  // Fetch leads from database
+  useEffect(() => {
+    const fetchLeads = async () => {
+      try {
+        setLoading(true);
+        
+        // Check if Supabase is configured
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        
+        if (!supabaseUrl || !supabaseKey) {
+          throw new Error("Supabase environment variables are not configured. Please check your .env file.");
+        }
+
+        // Fetch leads
+        const { data: leadsData, error: leadsError } = await supabase
+          .from("leads")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (leadsError) {
+          console.error("Leads fetch error:", leadsError);
+          throw new Error(`Failed to fetch leads: ${leadsError.message}`);
+        }
+
+        // Fetch comments for all leads
+        const { data: commentsData, error: commentsError } = await supabase
+          .from("comments")
+          .select("*")
+          .order("created_at", { ascending: true });
+
+        if (commentsError) {
+          console.error("Comments fetch error:", commentsError);
+          throw new Error(`Failed to fetch comments: ${commentsError.message}`);
+        }
+
+        // Combine leads with their comments
+        const leadsWithComments: Lead[] = (leadsData || []).map((lead) => {
+          const leadComments: Comment[] = (commentsData || [])
+            .filter((comment) => comment.lead_id === lead.id)
+            .map((comment) => ({
+              id: comment.id,
+              text: comment.text,
+              author: comment.author,
+              createdAt: new Date(comment.created_at || ""),
+            }));
+
+          return {
+            id: lead.id,
+            companyName: lead.company_name,
+            contactPerson: lead.contact_person,
+            contactEmail: lead.contact_email,
+            role: lead.role,
+            status: lead.status as LeadStatus,
+            comments: leadComments,
+            createdAt: new Date(lead.created_at || ""),
+            updatedAt: new Date(lead.updated_at || ""),
+          };
+        });
+
+        setLeads(leadsWithComments);
+        setError(null);
+        console.log(`Successfully loaded ${leadsWithComments.length} leads`);
+      } catch (error) {
+        console.error("Error fetching leads:", error);
+        const errorMessage = error instanceof Error ? error.message : "Failed to load leads";
+        setError(errorMessage);
+        toast.error(errorMessage);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLeads();
+  }, []);
+
+  const handleStatusChange = async (leadId: string, newStatus: LeadStatus) => {
+    try {
+      const { error } = await supabase
+        .from("leads")
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq("id", leadId);
+
+      if (error) throw error;
+
+      // Update local state
+      setLeads((prevLeads) =>
+        prevLeads.map((lead) =>
+          lead.id === leadId
+            ? { ...lead, status: newStatus, updatedAt: new Date() }
+            : lead
+        )
+      );
+
+      toast.success("Status updated successfully");
+    } catch (error) {
+      console.error("Error updating status:", error);
+      toast.error("Failed to update status");
+    }
   };
 
-  const handleAddComment = (leadId: string, commentText: string) => {
-    setLeads((prevLeads) =>
-      prevLeads.map((lead) =>
-        lead.id === leadId
-          ? {
-              ...lead,
-              comments: [
-                ...lead.comments,
-                {
-                  id: `c${Date.now()}`,
-                  text: commentText,
-                  createdAt: new Date(),
-                  author: "Current User",
-                },
-              ],
-              updatedAt: new Date(),
-            }
-          : lead
-      )
-    );
+  const handleAddComment = async (leadId: string, commentText: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("comments")
+        .insert({
+          lead_id: leadId,
+          text: commentText,
+          author: "Current User",
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update local state
+      setLeads((prevLeads) =>
+        prevLeads.map((lead) =>
+          lead.id === leadId
+            ? {
+                ...lead,
+                comments: [
+                  ...lead.comments,
+                  {
+                    id: data.id,
+                    text: data.text,
+                    createdAt: new Date(data.created_at || ""),
+                    author: data.author,
+                  },
+                ],
+                updatedAt: new Date(),
+              }
+            : lead
+        )
+      );
+
+      // Update lead's updated_at timestamp
+      await supabase
+        .from("leads")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", leadId);
+
+      toast.success("Comment added successfully");
+    } catch (error) {
+      console.error("Error adding comment:", error);
+      toast.error("Failed to add comment");
+    }
   };
 
   const filteredLeads = useMemo(() => {
@@ -165,11 +285,28 @@ const Index = () => {
           </Select>
         </div>
 
-        <LeadsTable
-          leads={filteredLeads}
-          onStatusChange={handleStatusChange}
-          onAddComment={handleAddComment}
-        />
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <p className="text-muted-foreground">Loading leads...</p>
+          </div>
+        ) : error ? (
+          <div className="rounded-lg border border-destructive bg-destructive/10 p-6">
+            <h3 className="text-lg font-semibold text-destructive mb-2">Error Loading Leads</h3>
+            <p className="text-sm text-muted-foreground mb-4">{error}</p>
+            <Button 
+              onClick={() => window.location.reload()} 
+              variant="outline"
+            >
+              Retry
+            </Button>
+          </div>
+        ) : (
+          <LeadsTable
+            leads={filteredLeads}
+            onStatusChange={handleStatusChange}
+            onAddComment={handleAddComment}
+          />
+        )}
       </main>
     </div>
   );

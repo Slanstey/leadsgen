@@ -14,7 +14,169 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      comments: {
+        Row: {
+          author: string
+          created_at: string | null
+          id: string
+          lead_id: string
+          text: string
+        }
+        Insert: {
+          author: string
+          created_at?: string | null
+          id?: string
+          lead_id: string
+          text: string
+        }
+        Update: {
+          author?: string
+          created_at?: string | null
+          id?: string
+          lead_id?: string
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comments_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      companies: {
+        Row: {
+          annual_revenue: string
+          created_at: string | null
+          description: string
+          id: string
+          industry: string
+          location: string
+          name: string
+          sub_industry: string
+          updated_at: string | null
+        }
+        Insert: {
+          annual_revenue: string
+          created_at?: string | null
+          description: string
+          id?: string
+          industry: string
+          location: string
+          name: string
+          sub_industry: string
+          updated_at?: string | null
+        }
+        Update: {
+          annual_revenue?: string
+          created_at?: string | null
+          description?: string
+          id?: string
+          industry?: string
+          location?: string
+          name?: string
+          sub_industry?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      executives: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          id: string
+          name: string
+          title: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          id?: string
+          name: string
+          title: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          id?: string
+          name?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "executives_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leads: {
+        Row: {
+          company_name: string
+          contact_email: string
+          contact_person: string
+          created_at: string | null
+          id: string
+          role: string
+          status: Database["public"]["Enums"]["lead_status"]
+          updated_at: string | null
+        }
+        Insert: {
+          company_name: string
+          contact_email: string
+          contact_person: string
+          created_at?: string | null
+          id?: string
+          role: string
+          status?: Database["public"]["Enums"]["lead_status"]
+          updated_at?: string | null
+        }
+        Update: {
+          company_name?: string
+          contact_email?: string
+          contact_person?: string
+          created_at?: string | null
+          id?: string
+          role?: string
+          status?: Database["public"]["Enums"]["lead_status"]
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      news_items: {
+        Row: {
+          company_name: string
+          created_at: string | null
+          date: string
+          id: string
+          source: string
+          summary: string
+          title: string
+        }
+        Insert: {
+          company_name: string
+          created_at?: string | null
+          date: string
+          id?: string
+          source: string
+          summary: string
+          title: string
+        }
+        Update: {
+          company_name?: string
+          created_at?: string | null
+          date?: string
+          id?: string
+          source?: string
+          summary?: string
+          title?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +185,13 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      lead_status:
+        | "not_contacted"
+        | "contacted"
+        | "qualified"
+        | "in_progress"
+        | "closed_won"
+        | "closed_lost"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +318,15 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      lead_status: [
+        "not_contacted",
+        "contacted",
+        "qualified",
+        "in_progress",
+        "closed_won",
+        "closed_lost",
+      ],
+    },
   },
 } as const
