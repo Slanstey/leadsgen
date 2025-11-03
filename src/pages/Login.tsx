@@ -13,40 +13,18 @@ const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const { signIn, signOut, user, profile, loading: authLoading } = useAuth();
+  const { signIn, user, profile, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
-  // Force logout on mount to clear any stuck sessions
+  // Redirect if already logged in (but wait for auth to finish loading)
   useEffect(() => {
-    console.log("Login component mounted - checking for existing session");
-    const clearSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          console.log("Found existing session, clearing it...");
-          await signOut();
-          console.log("Session cleared");
-        }
-      } catch (error) {
-        console.error("Error clearing session:", error);
-      }
-    };
-    clearSession();
-  }, []);
+    // Don't redirect while auth is still loading
+    if (authLoading) {
+      return;
+    }
 
-  // Redirect if already logged in
-  useEffect(() => {
-    console.log("Login useEffect - auth state:", { 
-      authLoading, 
-      hasUser: !!user, 
-      hasProfile: !!profile,
-      userEmail: user?.email,
-      profileTenantId: profile?.tenant_id 
-    });
-    
-    if (!authLoading && user && profile) {
-      console.log("Redirecting to dashboard...");
-      setLoading(false); // Reset local loading state
+    // If user is logged in with a profile, redirect to home
+    if (user && profile) {
       navigate("/", { replace: true });
     }
   }, [user, profile, authLoading, navigate]);
@@ -153,26 +131,6 @@ const Login = () => {
               )}
             </Button>
           </form>
-          <div className="mt-4 text-center">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                console.log("Manual logout clicked");
-                try {
-                  await signOut();
-                  await supabase.auth.signOut();
-                  localStorage.clear();
-                  sessionStorage.clear();
-                  window.location.reload();
-                } catch (error) {
-                  console.error("Logout error:", error);
-                }
-              }}
-            >
-              Clear Session & Reload
-            </Button>
-          </div>
         </CardContent>
       </Card>
     </div>
