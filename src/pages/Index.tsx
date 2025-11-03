@@ -17,12 +17,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { BarChart3, Settings, Search, Menu, Home } from "lucide-react";
+import { BarChart3, Settings, Search, Menu, Home, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
   const navigate = useNavigate();
+  const { profile, signOut } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
   const [companySearch, setCompanySearch] = useState("");
@@ -31,6 +33,11 @@ const Index = () => {
 
   // Fetch leads from database
   useEffect(() => {
+    if (!profile?.tenant_id) {
+      setLoading(false);
+      return;
+    }
+
     const fetchLeads = async () => {
       try {
         setLoading(true);
@@ -43,7 +50,7 @@ const Index = () => {
           throw new Error("Supabase environment variables are not configured. Please check your .env file.");
         }
 
-        // Fetch leads
+        // Fetch leads (RLS will automatically filter by tenant_id)
         const { data: leadsData, error: leadsError } = await supabase
           .from("leads")
           .select("*")
@@ -103,7 +110,7 @@ const Index = () => {
     };
 
     fetchLeads();
-  }, []);
+  }, [profile?.tenant_id]);
 
   const handleStatusChange = async (leadId: string, newStatus: LeadStatus) => {
     try {
@@ -131,13 +138,19 @@ const Index = () => {
   };
 
   const handleAddComment = async (leadId: string, commentText: string) => {
+    if (!profile?.tenant_id) {
+      toast.error("Unable to add comment: tenant not found");
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from("comments")
         .insert({
           lead_id: leadId,
           text: commentText,
-          author: "Current User",
+          author: profile.full_name || profile.email || "Current User",
+          tenant_id: profile.tenant_id,
         })
         .select()
         .single();
@@ -216,6 +229,21 @@ const Index = () => {
                 <DropdownMenuItem onClick={() => navigate("/settings")}>
                   <Settings className="mr-2 h-4 w-4" />
                   Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={async () => {
+                    try {
+                      await signOut();
+                      navigate("/login", { replace: true });
+                      toast.success("Successfully signed out");
+                    } catch (error) {
+                      console.error("Sign out error:", error);
+                      toast.error("Failed to sign out");
+                    }
+                  }}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign Out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
