@@ -11,6 +11,7 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, fullName: string, organizationName: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -52,96 +53,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const fetchUserProfile = async (userId: string) => {
-    console.log("=== fetchUserProfile called ===", userId);
-    setLoading(true);
-    
     try {
-      console.log("Fetching profile for user:", userId);
-      console.log("Current session:", await supabase.auth.getSession());
-      
       const { data, error } = await supabase
         .from("user_profiles")
         .select("*")
         .eq("id", userId)
         .single();
 
-      console.log("Profile fetch result:", { data, error });
-
       if (error) {
-        console.error("Error fetching user profile - FULL ERROR:", JSON.stringify(error, null, 2));
-        console.error("Error code:", error.code);
-        console.error("Error message:", error.message);
-        console.error("Error details:", error.details);
-        console.error("Error hint:", error.hint);
-        
-        // Check if it's a "not found" error (PGRST116) or other error
-        if (error.code === 'PGRST116') {
-          console.warn("User profile not found - trigger may not have created it yet");
-          // Try waiting a bit and retrying once
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const { data: retryData, error: retryError } = await supabase
-            .from("user_profiles")
-            .select("*")
-            .eq("id", userId)
-            .single();
-          
-          console.log("Retry result:", { retryData, retryError });
-          
-          if (retryError || !retryData) {
-            console.error("Profile still not found after retry:", retryError);
-            setLoading(false);
-            return;
-          }
-          
-          console.log("Profile loaded on retry:", retryData);
-          setProfile(retryData);
-          setLoading(false);
-          return;
-        }
-        
-        // For any other error, still clear loading so user isn't stuck
-        console.error("Profile fetch failed with error, clearing loading state");
+        console.error("Error fetching user profile:", error);
         setLoading(false);
         return;
       }
       
-      if (!data) {
-        console.warn("User profile not found for user (no data):", userId);
-        setLoading(false);
-        return;
+      if (data) {
+        setProfile(data);
       }
-      
-      console.log("Profile loaded successfully:", data);
-      setProfile(data);
-      setLoading(false);
     } catch (error) {
-      console.error("Exception in fetchUserProfile:", error);
-      console.error("Exception stack:", (error as Error).stack);
+      console.error("Error fetching user profile:", error);
+    } finally {
       setLoading(false);
     }
   };
 
   const signIn = async (email: string, password: string) => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-      if (error) {
-        setLoading(false);
-        throw error;
-      }
+    if (error) throw error;
 
-      if (data.user) {
-        await fetchUserProfile(data.user.id);
-      } else {
-        setLoading(false);
-      }
-    } catch (error) {
-      setLoading(false);
-      throw error;
+    // Check if email is verified
+    if (data.user && !data.user.email_confirmed_at) {
+      // Sign out the user immediately if email is not verified
+      await supabase.auth.signOut();
+      throw new Error("Please verify your email address before signing in. Check your inbox for the verification link.");
+    }
+
+    if (data.user) {
+      await fetchUserProfile(data.user.id);
+    }
+  };
+
+  const signUp = async (email: string, password: string, fullName: string, organizationName: string) => {
+    // Sign up the user with organization name in metadata
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          organization_name: organizationName,
+        },
+      },
+    });
+
+    if (authError) throw authError;
+
+    // The trigger function will automatically:
+    // 1. Find or create a tenant based on organization name
+    // 2. Create the user_profile with the assigned tenant_id
+    
+    if (authData.user) {
+      // Wait a moment for the trigger to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Fetch the profile to verify it was created with tenant
+      await fetchUserProfile(authData.user.id);
     }
   };
 
@@ -152,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, profile, loading, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

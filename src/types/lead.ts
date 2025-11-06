@@ -13,6 +13,7 @@ export interface Lead {
   contactEmail: string;
   role: string;
   status: LeadStatus;
+  tier: number;
   comments: Comment[];
   createdAt: Date;
   updatedAt: Date;

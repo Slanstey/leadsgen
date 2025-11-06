@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageSquare, X, Send, Mail } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TierBadge } from "@/components/TierBadge";
 import { toast } from "sonner";
 import { EmailDialog } from "@/components/EmailDialog";
 
@@ -70,6 +71,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
             <TableHead>Contact Person</TableHead>
             <TableHead>Email</TableHead>
             <TableHead>Role</TableHead>
+            <TableHead>Tier</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Comments</TableHead>
             <TableHead className="text-right">Actions</TableHead>
@@ -90,6 +92,9 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                 <TableCell>{lead.contactPerson}</TableCell>
                 <TableCell className="text-muted-foreground">{lead.contactEmail}</TableCell>
                 <TableCell>{lead.role}</TableCell>
+                <TableCell>
+                  <TierBadge tier={lead.tier} />
+                </TableCell>
                 <TableCell>
                   <Select
                     value={lead.status}
@@ -141,7 +146,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
               </TableRow>
               {commentingLead === lead.id && (
                 <TableRow>
-                  <TableCell colSpan={7} className="bg-muted/50">
+                  <TableCell colSpan={8} className="bg-muted/50">
                     <div className="space-y-3 py-2">
                       {lead.comments.length > 0 && (
                         <div className="space-y-2">

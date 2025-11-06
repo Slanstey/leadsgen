@@ -155,6 +155,7 @@ export type Database = {
           role: string
           status: Database["public"]["Enums"]["lead_status"]
           tenant_id: string
+          tier: number
           updated_at: string | null
         }
         Insert: {
@@ -166,6 +167,7 @@ export type Database = {
           role: string
           status?: Database["public"]["Enums"]["lead_status"]
           tenant_id: string
+          tier?: number
           updated_at?: string | null
         }
         Update: {
@@ -177,6 +179,7 @@ export type Database = {
           role?: string
           status?: Database["public"]["Enums"]["lead_status"]
           tenant_id?: string
+          tier?: number
           updated_at?: string | null
         }
         Relationships: [
@@ -189,51 +192,14 @@ export type Database = {
           },
         ]
       }
-      news_items: {
-        Row: {
-          company_name: string
-          created_at: string | null
-          date: string
-          id: string
-          source: string
-          summary: string
-          tenant_id: string
-          title: string
-        }
-        Insert: {
-          company_name: string
-          created_at?: string | null
-          date: string
-          id?: string
-          source: string
-          summary: string
-          tenant_id: string
-          title: string
-        }
-        Update: {
-          company_name?: string
-          created_at?: string | null
-          date?: string
-          id?: string
-          source?: string
-          summary?: string
-          tenant_id?: string
-          title?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "news_items_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       tenants: {
         Row: {
           created_at: string | null
           id: string
+          linkedin_experience_operator: string | null
+          linkedin_experience_years: number | null
+          linkedin_locations: string | null
+          linkedin_positions: string | null
           name: string
           slug: string
           updated_at: string | null
@@ -241,6 +207,10 @@ export type Database = {
         Insert: {
           created_at?: string | null
           id?: string
+          linkedin_experience_operator?: string | null
+          linkedin_experience_years?: number | null
+          linkedin_locations?: string | null
+          linkedin_positions?: string | null
           name: string
           slug: string
           updated_at?: string | null
@@ -248,6 +218,10 @@ export type Database = {
         Update: {
           created_at?: string | null
           id?: string
+          linkedin_experience_operator?: string | null
+          linkedin_experience_years?: number | null
+          linkedin_locations?: string | null
+          linkedin_positions?: string | null
           name?: string
           slug?: string
           updated_at?: string | null

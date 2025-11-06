@@ -1,16 +1,134 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { mockCompanies, mockNews } from "@/data/mockData";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Building2, MapPin, DollarSign, Briefcase, User } from "lucide-react";
+import { ArrowLeft, Building2, MapPin, DollarSign, Briefcase, User, Loader2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+import type { Tables } from "@/integrations/supabase/types";
+
+type Company = Tables<"companies">;
+type Executive = Tables<"executives">;
+type NewsItem = {
+  id: string;
+  title: string;
+  date: string;
+  source: string;
+  summary: string;
+};
 
 const CompanyDetail = () => {
   const { companyName } = useParams<{ companyName: string }>();
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  const [company, setCompany] = useState<Company | null>(null);
+  const [executives, setExecutives] = useState<Executive[]>([]);
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newsLoading, setNewsLoading] = useState(false);
   
   const decodedName = decodeURIComponent(companyName || "");
-  const company = mockCompanies[decodedName];
-  const news = mockNews[decodedName] || [];
+
+  useEffect(() => {
+    if (!decodedName || !profile?.tenant_id) {
+      setLoading(false);
+      return;
+    }
+
+    const fetchCompanyData = async () => {
+      try {
+        setLoading(true);
+        
+        // Fetch company
+        const { data: companyData, error: companyError } = await supabase
+          .from("companies")
+          .select("*")
+          .eq("name", decodedName)
+          .single();
+
+        if (companyError) {
+          console.error("Error fetching company:", companyError);
+          console.error("Searched for company name:", decodedName);
+          // Try to find similar companies for debugging
+          const { data: similar } = await supabase
+            .from("companies")
+            .select("name")
+            .limit(5);
+          console.log("Available companies:", similar);
+          setLoading(false);
+          return;
+        }
+
+        if (!companyData) {
+          setLoading(false);
+          return;
+        }
+
+        setCompany(companyData);
+
+        // Fetch executives for this company
+        const { data: executivesData, error: executivesError } = await supabase
+          .from("executives")
+          .select("*")
+          .eq("company_id", companyData.id)
+          .order("name");
+
+        if (!executivesError && executivesData) {
+          setExecutives(executivesData);
+        }
+
+        // Fetch news using LLM
+        await fetchNewsWithLLM(decodedName);
+      } catch (error) {
+        console.error("Error fetching company data:", error);
+        toast.error("Failed to load company information");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCompanyData();
+  }, [decodedName, profile?.tenant_id]);
+
+  const fetchNewsWithLLM = async (companyName: string) => {
+    try {
+      setNewsLoading(true);
+      
+      // Call the Supabase Edge Function to get news
+      const { data, error } = await supabase.functions.invoke('generate-email', {
+        body: { 
+          action: 'get_news',
+          company_name: companyName 
+        }
+      });
+
+      if (error) {
+        console.error("Error fetching news:", error);
+        setNews([]);
+        return;
+      }
+
+      if (data && Array.isArray(data.news)) {
+        setNews(data.news);
+      } else {
+        setNews([]);
+      }
+    } catch (error) {
+      console.error("Error in LLM news fetch:", error);
+      setNews([]);
+    } finally {
+      setNewsLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!company) {
     return (
@@ -71,7 +189,7 @@ const CompanyDetail = () => {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Annual Revenue</p>
-                      <p className="font-medium">{company.annualRevenue}</p>
+                      <p className="font-medium">{company.annual_revenue}</p>
                     </div>
                   </div>
                   <div className="flex gap-3">
@@ -89,7 +207,7 @@ const CompanyDetail = () => {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Sub-Industry</p>
-                      <p className="font-medium">{company.subIndustry}</p>
+                      <p className="font-medium">{company.sub_industry}</p>
                     </div>
                   </div>
                 </div>
@@ -101,7 +219,12 @@ const CompanyDetail = () => {
                 <CardTitle>Latest News</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {news.length > 0 ? (
+                {newsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-muted-foreground">Fetching latest news...</span>
+                  </div>
+                ) : news.length > 0 ? (
                   news.map((item) => (
                     <div key={item.id} className="border-l-4 border-primary pl-4 py-2">
                       <h3 className="font-semibold mb-1">{item.title}</h3>
@@ -126,17 +249,21 @@ const CompanyDetail = () => {
                 <CardTitle>Key Executives</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {company.executives.map((exec, index) => (
-                  <div key={index} className="flex gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-                      <User className="h-5 w-5 text-muted-foreground" />
+                {executives.length > 0 ? (
+                  executives.map((exec) => (
+                    <div key={exec.id} className="flex gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                        <User className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{exec.name}</p>
+                        <p className="text-sm text-muted-foreground">{exec.title}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium">{exec.name}</p>
-                      <p className="text-sm text-muted-foreground">{exec.title}</p>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-muted-foreground">No executives listed</p>
+                )}
               </CardContent>
             </Card>
           </div>

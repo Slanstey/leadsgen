@@ -7,79 +7,66 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { BarChart3, Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
-  const { signIn, user, profile, loading: authLoading } = useAuth();
+  const { signIn, signUp, user, profile, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
-  // Redirect if already logged in (but wait for auth to finish loading)
+  // Redirect if already logged in
   useEffect(() => {
-    // Don't redirect while auth is still loading
-    if (authLoading) {
-      return;
-    }
-
-    // If user is logged in with a profile, redirect to home
-    if (user && profile) {
+    if (!authLoading && user && profile) {
       navigate("/", { replace: true });
     }
   }, [user, profile, authLoading, navigate]);
 
-  // Timeout protection - if loading takes too long, show error
-  useEffect(() => {
-    if (loading) {
-      const timeout = setTimeout(() => {
-        console.error("Login timeout - profile loading took too long");
-        setLoading(false);
-        toast.error("Login is taking longer than expected. Please try again.");
-      }, 10000); // 10 second timeout
-
-      return () => clearTimeout(timeout);
-    }
-  }, [loading]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    console.log("=== Login form submitted ===", email);
 
     try {
-      console.log("Calling signIn...");
       await signIn(email, password);
-      console.log("signIn completed, waiting for profile...");
       toast.success("Successfully signed in!");
-      // Don't set loading to false here - let the useEffect handle redirect
-      // The loading state will be managed by authLoading from AuthContext
+      navigate("/");
     } catch (error: any) {
-      console.error("Login error:", error);
-      console.error("Login error details:", JSON.stringify(error, null, 2));
       toast.error(error.message || "Failed to sign in");
+    } finally {
       setLoading(false);
     }
   };
 
-  // Show loading if we're redirecting after successful login
-  // Show loading if: 
-  // 1. We have a user but no profile yet (waiting for profile to load)
-  // 2. We're currently submitting the form
-  // But NOT if we're just checking initial auth state (no user, not loading form)
-  const isLoadingAfterLogin = (user && !profile) || (loading && user);
-  
-  if (isLoadingAfterLogin) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Signing you in...</p>
-          <p className="text-xs text-muted-foreground mt-2">Loading your profile...</p>
-        </div>
-      </div>
-    );
-  }
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Extract organization name from email domain
+    const emailDomain = email.split('@')[1];
+    if (!emailDomain) {
+      toast.error("Please enter a valid email address");
+      return;
+    }
+    
+    // Extract organization name from domain (e.g., "example.com" -> "example")
+    const organizationName = emailDomain.split('.')[0];
+
+    setLoading(true);
+
+    try {
+      await signUp(email, password, fullName, organizationName);
+      toast.success("Account created successfully! Please check your email to verify your account.");
+      // Switch to login tab after successful signup
+      setEmail("");
+      setPassword("");
+      setFullName("");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to create account");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -92,45 +79,111 @@ const Login = () => {
           </div>
           <CardTitle className="text-2xl text-center">LeadFlow</CardTitle>
           <CardDescription className="text-center">
-            Sign in to your account to continue
+            Sign in or create an account to continue
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="name@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={loading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={loading}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                "Sign in"
-              )}
-            </Button>
-          </form>
+          <Tabs defaultValue="signin" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="signin">Sign In</TabsTrigger>
+              <TabsTrigger value="signup">Sign Up</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="signin" className="space-y-4 mt-4">
+              <form onSubmit={handleSignIn} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signin-email">Email</Label>
+                  <Input
+                    id="signin-email"
+                    type="email"
+                    placeholder="name@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    disabled={loading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signin-password">Password</Label>
+                  <Input
+                    id="signin-password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    disabled={loading}
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    "Sign in"
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+            
+            <TabsContent value="signup" className="space-y-4 mt-4">
+              <form onSubmit={handleSignUp} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signup-name">Full Name</Label>
+                  <Input
+                    id="signup-name"
+                    type="text"
+                    placeholder="John Doe"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                    disabled={loading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signup-email">Email</Label>
+                  <Input
+                    id="signup-email"
+                    type="email"
+                    placeholder="name@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    disabled={loading}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Your organization will be automatically determined from your email domain.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signup-password">Password</Label>
+                  <Input
+                    id="signup-password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    disabled={loading}
+                    minLength={6}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Must be at least 6 characters
+                  </p>
+                </div>
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating account...
+                    </>
+                  ) : (
+                    "Create Account"
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>

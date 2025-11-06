@@ -90,6 +90,7 @@ const Index = () => {
             contactEmail: lead.contact_email,
             role: lead.role,
             status: lead.status as LeadStatus,
+            tier: lead.tier || 1,
             comments: leadComments,
             createdAt: new Date(lead.created_at || ""),
             updatedAt: new Date(lead.updated_at || ""),
