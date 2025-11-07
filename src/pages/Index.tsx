@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Lead, LeadStatus, Comment } from "@/types/lead";
 import { LeadsTable } from "@/components/LeadsTable";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { profile, signOut } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
@@ -32,86 +33,92 @@ const Index = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Fetch leads from database
-  useEffect(() => {
+  const fetchLeads = useCallback(async () => {
     if (!profile?.tenant_id) {
       setLoading(false);
       return;
     }
 
-    const fetchLeads = async () => {
-      try {
-        setLoading(true);
-        
-        // Check if Supabase is configured
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-        
-        if (!supabaseUrl || !supabaseKey) {
-          throw new Error("Supabase environment variables are not configured. Please check your .env file.");
-        }
-
-        // Fetch leads (RLS will automatically filter by tenant_id)
-        const { data: leadsData, error: leadsError } = await supabase
-          .from("leads")
-          .select("*")
-          .order("created_at", { ascending: false });
-
-        if (leadsError) {
-          console.error("Leads fetch error:", leadsError);
-          throw new Error(`Failed to fetch leads: ${leadsError.message}`);
-        }
-
-        // Fetch comments for all leads
-        const { data: commentsData, error: commentsError } = await supabase
-          .from("comments")
-          .select("*")
-          .order("created_at", { ascending: true });
-
-        if (commentsError) {
-          console.error("Comments fetch error:", commentsError);
-          throw new Error(`Failed to fetch comments: ${commentsError.message}`);
-        }
-
-        // Combine leads with their comments
-        const leadsWithComments: Lead[] = (leadsData || []).map((lead) => {
-          const leadComments: Comment[] = (commentsData || [])
-            .filter((comment) => comment.lead_id === lead.id)
-            .map((comment) => ({
-              id: comment.id,
-              text: comment.text,
-              author: comment.author,
-              createdAt: new Date(comment.created_at || ""),
-            }));
-
-          return {
-            id: lead.id,
-            companyName: lead.company_name,
-            contactPerson: lead.contact_person,
-            contactEmail: lead.contact_email,
-            role: lead.role,
-            status: lead.status as LeadStatus,
-            tier: lead.tier || 1,
-            comments: leadComments,
-            createdAt: new Date(lead.created_at || ""),
-            updatedAt: new Date(lead.updated_at || ""),
-          };
-        });
-
-        setLeads(leadsWithComments);
-        setError(null);
-        console.log(`Successfully loaded ${leadsWithComments.length} leads`);
-      } catch (error) {
-        console.error("Error fetching leads:", error);
-        const errorMessage = error instanceof Error ? error.message : "Failed to load leads";
-        setError(errorMessage);
-        toast.error(errorMessage);
-      } finally {
-        setLoading(false);
+    try {
+      setLoading(true);
+      
+      // Check if Supabase is configured
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl || !supabaseKey) {
+        throw new Error("Supabase environment variables are not configured. Please check your .env file.");
       }
-    };
 
-    fetchLeads();
+      // Fetch leads (RLS will automatically filter by tenant_id)
+      const { data: leadsData, error: leadsError } = await supabase
+        .from("leads")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (leadsError) {
+        console.error("Leads fetch error:", leadsError);
+        throw new Error(`Failed to fetch leads: ${leadsError.message}`);
+      }
+
+      // Fetch comments for all leads
+      const { data: commentsData, error: commentsError } = await supabase
+        .from("comments")
+        .select("*")
+        .order("created_at", { ascending: true });
+
+      if (commentsError) {
+        console.error("Comments fetch error:", commentsError);
+        throw new Error(`Failed to fetch comments: ${commentsError.message}`);
+      }
+
+      // Combine leads with their comments
+      const leadsWithComments: Lead[] = (leadsData || []).map((lead) => {
+        const leadComments: Comment[] = (commentsData || [])
+          .filter((comment) => comment.lead_id === lead.id)
+          .map((comment) => ({
+            id: comment.id,
+            text: comment.text,
+            author: comment.author,
+            createdAt: new Date(comment.created_at || ""),
+          }));
+
+        return {
+          id: lead.id,
+          companyName: lead.company_name,
+          contactPerson: lead.contact_person,
+          contactEmail: lead.contact_email,
+          role: lead.role,
+          status: lead.status as LeadStatus,
+          tier: lead.tier || 1,
+          comments: leadComments,
+          createdAt: new Date(lead.created_at || ""),
+          updatedAt: new Date(lead.updated_at || ""),
+        };
+      });
+
+      setLeads(leadsWithComments);
+      setError(null);
+    } catch (error) {
+      console.error("Error fetching leads:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to load leads";
+      setError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   }, [profile?.tenant_id]);
+
+  useEffect(() => {
+    fetchLeads();
+  }, [fetchLeads]);
+
+  // Refetch when navigating back to this page
+  useEffect(() => {
+    if (location.pathname === "/" && profile?.tenant_id) {
+      fetchLeads();
+    }
+  }, [location.pathname, profile?.tenant_id, fetchLeads]);
 
   const handleStatusChange = async (leadId: string, newStatus: LeadStatus) => {
     try {

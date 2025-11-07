@@ -49,31 +49,53 @@ const Settings = () => {
       }
 
       try {
-        const { data, error } = await supabase
-          .from("tenants")
-          .select("*")
-          .eq("id", profile.tenant_id)
-          .single();
-
-        if (error) {
-          console.error("Error loading settings:", error);
-          toast.error("Failed to load settings");
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
           setLoading(false);
           return;
         }
 
-        if (data) {
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+        
+        const response = await fetch(`${backendUrl}/api/get-preferences`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        });
+
+        if (!response.ok) {
+          console.error("Error loading settings:", response.status);
+          setLoading(false);
+          return;
+        }
+
+        const result = await response.json();
+
+        if (result.success && result.preferences) {
+          const prefs = result.preferences;
+          
+          // Load general preferences
+          setFormData({
+            targetIndustry: prefs.target_industry || "",
+            companySize: prefs.company_size || "",
+            geographicRegion: prefs.geographic_region || "",
+            targetRoles: prefs.target_roles || "",
+            revenueRange: prefs.revenue_range || "",
+            keywords: prefs.keywords || "",
+            notes: prefs.notes || "",
+          });
+          
           // Load LinkedIn search settings
           setLinkedinData({
-            locations: data.linkedin_locations || "",
-            positions: data.linkedin_positions || "",
-            experienceOperator: data.linkedin_experience_operator || "=",
-            experienceYears: data.linkedin_experience_years || 0,
+            locations: prefs.linkedin_locations || "",
+            positions: prefs.linkedin_positions || "",
+            experienceOperator: prefs.linkedin_experience_operator || "=",
+            experienceYears: prefs.linkedin_experience_years || 0,
           });
         }
       } catch (error) {
         console.error("Error loading settings:", error);
-        toast.error("Failed to load settings");
       } finally {
         setLoading(false);
       }
@@ -90,67 +112,88 @@ const Settings = () => {
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from("tenants")
-        .update({
-          linkedin_locations: linkedinData.locations,
-          linkedin_positions: linkedinData.positions,
-          linkedin_experience_operator: linkedinData.experienceOperator,
-          linkedin_experience_years: linkedinData.experienceYears,
-        })
-        .eq("id", profile.tenant_id);
-
-      if (error) {
-        console.error("Error saving settings:", error);
-        toast.error("Failed to save settings");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("You must be logged in to save settings");
+        setSaving(false);
         return;
       }
 
-      toast.success("LinkedIn search preferences saved successfully");
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+      
+      const response = await fetch(`${backendUrl}/api/save-preferences`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          tenant_id: profile.tenant_id,
+          // General preferences
+          target_industry: formData.targetIndustry,
+          company_size: formData.companySize,
+          geographic_region: formData.geographicRegion,
+          target_roles: formData.targetRoles,
+          revenue_range: formData.revenueRange,
+          keywords: formData.keywords,
+          notes: formData.notes,
+          // LinkedIn preferences
+          linkedin_locations: linkedinData.locations,
+          linkedin_positions: linkedinData.positions,
+          linkedin_experience_operator: linkedinData.experienceOperator,
+          linkedin_experience_years: Number(linkedinData.experienceYears) || 0,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || 'Unknown error' };
+        }
+        throw new Error(errorData.error || errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success("Preferences saved successfully");
+      } else {
+        toast.error(data.error || "Failed to save settings");
+      }
     } catch (error) {
       console.error("Error saving settings:", error);
-      toast.error("Failed to save settings");
+      toast.error(error instanceof Error ? error.message : "Failed to save settings");
     } finally {
       setSaving(false);
     }
   };
 
   const handleSearchLinkedIn = async () => {
-    console.log("🔍 LinkedIn search button clicked");
-    
     if (!profile?.tenant_id) {
-      console.error("❌ No tenant_id found in profile");
       toast.error("You must be logged in to search LinkedIn");
       return;
     }
 
     if (!linkedinData.locations || !linkedinData.positions) {
-      console.error("❌ Missing locations or positions");
       toast.error("Please fill in locations and positions before searching");
       return;
     }
 
-    console.log("✅ Pre-flight checks passed, starting search...");
     setSearching(true);
     
     try {
-      // Get the session token for authentication
-      console.log("📝 Step 1: Getting session token...");
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        console.error("❌ No session found");
         toast.error("You must be logged in to search LinkedIn");
         setSearching(false);
         return;
       }
-      console.log("✅ Session token obtained");
 
-      // Call Python backend API
       const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-      console.log(`🌐 Backend URL: ${backendUrl}`);
       
-      // Parse and filter empty values
-      console.log("📝 Step 2: Parsing locations and positions...");
       const locations = linkedinData.locations
         .split(',')
         .map(l => l.trim())
@@ -161,27 +204,11 @@ const Settings = () => {
         .map(p => p.trim())
         .filter(p => p.length > 0);
       
-      console.log(`✅ Parsed ${locations.length} location(s):`, locations);
-      console.log(`✅ Parsed ${positions.length} position(s):`, positions);
-      
       if (locations.length === 0 || positions.length === 0) {
-        console.error("❌ Empty locations or positions after parsing");
         toast.error("Please fill in at least one location and one position");
         setSearching(false);
         return;
       }
-      
-      const requestBody = {
-        locations: locations,
-        positions: positions,
-        experience_operator: linkedinData.experienceOperator,
-        experience_years: Number(linkedinData.experienceYears) || 0,
-        tenant_id: profile.tenant_id,
-        limit: 10,
-      };
-      
-      console.log("📝 Step 3: Preparing request body:", requestBody);
-      console.log(`📡 Step 4: Sending POST request to ${backendUrl}/api/search-linkedin...`);
       
       const response = await fetch(`${backendUrl}/api/search-linkedin`, {
         method: 'POST',
@@ -189,51 +216,41 @@ const Settings = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          locations: locations,
+          positions: positions,
+          experience_operator: linkedinData.experienceOperator,
+          experience_years: Number(linkedinData.experienceYears) || 0,
+          tenant_id: profile.tenant_id,
+          limit: 10,
+        }),
       });
 
-      console.log(`📥 Step 5: Received response with status: ${response.status}`);
-      console.log(`📥 Response headers:`, Object.fromEntries(response.headers.entries()));
-
       if (!response.ok) {
-        console.error(`❌ HTTP error! status: ${response.status}`);
         const errorText = await response.text();
-        console.error(`❌ Error response body:`, errorText);
-        
         let errorData;
         try {
           errorData = JSON.parse(errorText);
         } catch {
           errorData = { error: errorText || 'Unknown error' };
         }
-        
         throw new Error(errorData.error || errorData.detail || `HTTP error! status: ${response.status}`);
       }
 
-      console.log("📝 Step 6: Parsing response JSON...");
       const data = await response.json();
-      console.log("✅ Response data:", data);
 
       if (data.success) {
-        console.log(`✅ Success! Found ${data.profiles_found} profiles, created ${data.leads_created} leads`);
         toast.success(`Successfully found ${data.profiles_found} profiles and created ${data.leads_created} leads`);
-        // Refresh the page to show new leads
         setTimeout(() => {
           navigate("/");
         }, 1500);
       } else {
-        console.error(`❌ Search failed: ${data.error}`);
         toast.error(data.error || "Failed to search LinkedIn");
       }
     } catch (error) {
-      console.error("❌ Error searching LinkedIn:", error);
-      console.error("Error details:", {
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
+      console.error("Error searching LinkedIn:", error);
       toast.error(error instanceof Error ? error.message : "Failed to search LinkedIn");
     } finally {
-      console.log("🏁 Search process completed, resetting searching state");
       setSearching(false);
     }
   };
