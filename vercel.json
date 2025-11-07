@@ -1,0 +1,25 @@
+{
+    "version": 2,
+    "buildCommand": "npm run build",
+    "outputDirectory": "dist",
+    "framework": null,
+    "rewrites": [
+        {
+            "source": "/api/(.*)",
+            "destination": "/api/index.py"
+        },
+        {
+            "source": "/(.*)",
+            "destination": "/index.html"
+        }
+    ],
+    "functions": {
+        "api/index.py": {
+            "runtime": "python3.11",
+            "includeFiles": "api/backend/**"
+        }
+    },
+    "env": {
+        "PYTHONPATH": "api/backend"
+    }
+}

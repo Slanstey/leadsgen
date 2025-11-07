@@ -46,3 +46,8 @@ backend/env/
 backend/.venv
 backend/*.pyc
 backend/.pytest_cache/
+
+# Vercel
+.vercel
+api/__pycache__/
+api/backend/__pycache__/
