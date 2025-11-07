@@ -1,3 +1,5 @@
+# Requirements for Vercel serverless function
+# This file should match backend/requirements.txt (except uvicorn which isn't needed for serverless)
 fastapi==0.104.1
 python-dotenv==1.0.0
 supabase==2.0.0

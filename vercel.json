@@ -15,11 +15,7 @@
     ],
     "functions": {
         "api/index.py": {
-            "runtime": "python3.11",
-            "includeFiles": "api/backend/**"
+            "includeFiles": "backend/**"
         }
-    },
-    "env": {
-        "PYTHONPATH": "api/backend"
     }
 }

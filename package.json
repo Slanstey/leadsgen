@@ -5,14 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:sync-backend && vite build",
-    "build:dev": "npm run build:sync-backend && vite build --mode development",
-    "build:sync-backend": "node scripts/sync-backend.cjs",
+    "build": "vite build",
+    "build:dev": "vite build --mode development",
     "build:backend": "echo 'Backend is deployed as serverless functions on Vercel'",
     "build:all": "npm run build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "postinstall": "npm run build:sync-backend"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -49,32 +49,21 @@ const Settings = () => {
       }
 
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
+        // Load preferences directly from Supabase using user's session
+        const { data: prefs, error } = await supabase
+          .from("tenant_preferences")
+          .select("*")
+          .eq("tenant_id", profile.tenant_id)
+          .single();
+
+        if (error && error.code !== 'PGRST116') {
+          // PGRST116 means no rows found, which is fine
+          console.error("Error loading settings:", error);
           setLoading(false);
           return;
         }
 
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-        
-        const response = await fetch(`${backendUrl}/api/get-preferences`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-        });
-
-        if (!response.ok) {
-          console.error("Error loading settings:", response.status);
-          setLoading(false);
-          return;
-        }
-
-        const result = await response.json();
-
-        if (result.success && result.preferences) {
-          const prefs = result.preferences;
-          
+        if (prefs) {
           // Load general preferences
           setFormData({
             targetIndustry: prefs.target_industry || "",
@@ -112,60 +101,70 @@ const Settings = () => {
 
     setSaving(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast.error("You must be logged in to save settings");
-        setSaving(false);
-        return;
+      // Prepare preferences data
+      const preferencesData = {
+        tenant_id: profile.tenant_id,
+        // General preferences
+        target_industry: formData.targetIndustry || null,
+        company_size: formData.companySize || null,
+        geographic_region: formData.geographicRegion || null,
+        target_roles: formData.targetRoles || null,
+        revenue_range: formData.revenueRange || null,
+        keywords: formData.keywords || null,
+        notes: formData.notes || null,
+        // LinkedIn preferences
+        linkedin_locations: linkedinData.locations || null,
+        linkedin_positions: linkedinData.positions || null,
+        linkedin_experience_operator: linkedinData.experienceOperator || "=",
+        linkedin_experience_years: Number(linkedinData.experienceYears) || 0,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Check if preferences already exist
+      const { data: existing, error: checkError } = await supabase
+        .from("tenant_preferences")
+        .select("id")
+        .eq("tenant_id", profile.tenant_id)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        // PGRST116 means no rows found, which is fine
+        throw checkError;
       }
 
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-      
-      const response = await fetch(`${backendUrl}/api/save-preferences`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          tenant_id: profile.tenant_id,
-          // General preferences
-          target_industry: formData.targetIndustry,
-          company_size: formData.companySize,
-          geographic_region: formData.geographicRegion,
-          target_roles: formData.targetRoles,
-          revenue_range: formData.revenueRange,
-          keywords: formData.keywords,
-          notes: formData.notes,
-          // LinkedIn preferences
-          linkedin_locations: linkedinData.locations,
-          linkedin_positions: linkedinData.positions,
-          linkedin_experience_operator: linkedinData.experienceOperator,
-          linkedin_experience_years: Number(linkedinData.experienceYears) || 0,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { error: errorText || 'Unknown error' };
-        }
-        throw new Error(errorData.error || errorData.detail || `HTTP error! status: ${response.status}`);
+      let result;
+      if (existing) {
+        // Update existing preferences
+        const { data, error } = await supabase
+          .from("tenant_preferences")
+          .update(preferencesData)
+          .eq("tenant_id", profile.tenant_id)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        result = data;
+      } else {
+        // Insert new preferences
+        const { data, error } = await supabase
+          .from("tenant_preferences")
+          .insert(preferencesData)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        result = data;
       }
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (result) {
         toast.success("Preferences saved successfully");
       } else {
-        toast.error(data.error || "Failed to save settings");
+        toast.error("Failed to save preferences");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving settings:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to save settings");
+      const errorMessage = error?.message || error?.error || "Failed to save settings";
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }

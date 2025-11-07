@@ -1,0 +1,11 @@
+# Files/directories to ignore when deploying to Vercel
+backend/venv/
+backend/__pycache__/
+backend/.pytest_cache/
+*.pyc
+__pycache__/
+.env
+.env.local
+node_modules/
+dist/
+

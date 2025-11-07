@@ -9,6 +9,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from postgrest.exceptions import APIError as PostgrestAPIError
+from postgrest import SyncPostgrestClient
 import logging
 
 from services.linkedin_search import LinkedInSearchService
@@ -57,7 +58,21 @@ if not SUPABASE_SERVICE_KEY:
         "This should be the SERVICE_ROLE key (secret), not the ANON key (publishable)."
     )
 
+# Initialize Supabase client with service role key
+# Service role key bypasses RLS automatically
+# Verify the key format (service role keys start with 'eyJ' and are JWT tokens)
+if not SUPABASE_SERVICE_KEY.startswith('eyJ'):
+    logger.warning("WARNING: SUPABASE_SERVICE_ROLE_KEY doesn't look like a service role key (should start with 'eyJ')")
+    logger.warning("Make sure you're using the SERVICE_ROLE key, not the ANON key")
+
+# Initialize Supabase client with service role key
+# Service role key bypasses RLS automatically
+# Note: We'll create a separate client for auth operations vs table operations
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+# Log that we're using service role (for debugging)
+logger.info(f"Supabase client initialized with service role key (RLS bypass enabled)")
+logger.info(f"Service role key starts with: {SUPABASE_SERVICE_KEY[:10]}...")
 
 # Initialize LinkedIn Search Service
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY_ForSearchLinkedIn")
@@ -243,7 +258,9 @@ async def get_preferences(
     """Get tenant preferences"""
     
     try:
-        result = supabase.table("tenant_preferences").select("*").eq("tenant_id", user_info["tenant_id"]).execute()
+        # Use service role client to bypass RLS
+        service_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        result = service_client.table("tenant_preferences").select("*").eq("tenant_id", user_info["tenant_id"]).execute()
         
         if result.data and len(result.data) > 0:
             return GetPreferencesResponse(
@@ -315,25 +332,68 @@ async def save_preferences(
             update_data["linkedin_experience_years"] = request.linkedin_experience_years
         
         # Check if preferences record exists
-        existing = supabase.table("tenant_preferences").select("id").eq("tenant_id", request.tenant_id).execute()
+        # Use PostgREST client directly with service role key to ensure RLS bypass
+        # The service role key MUST be sent as both apikey header and Authorization Bearer token
+        postgrest_client = SyncPostgrestClient(
+            base_url=f"{SUPABASE_URL}/rest/v1",
+            schema="public",
+            headers={
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"
+            }
+        )
         
-        if existing.data and len(existing.data) > 0:
+        # Verify we're using service role by checking the key format
+        if not SUPABASE_SERVICE_KEY.startswith('eyJ'):
+            logger.error("CRITICAL: Service role key format is incorrect! It should start with 'eyJ'")
+            raise HTTPException(status_code=500, detail="Service role key configuration error")
+        
+        # Check if preferences exist
+        existing_response = postgrest_client.from_("tenant_preferences").select("id").eq("tenant_id", request.tenant_id).execute()
+        existing_data = existing_response.data if hasattr(existing_response, 'data') else []
+        
+        if existing_data and len(existing_data) > 0:
             # Update existing preferences
-            result = supabase.table("tenant_preferences").update(update_data).eq("tenant_id", request.tenant_id).execute()
+            # Service role key bypasses RLS automatically
+            result_response = postgrest_client.from_("tenant_preferences").update(update_data).eq("tenant_id", request.tenant_id).execute()
+            result = result_response.data if hasattr(result_response, 'data') else []
         else:
             # Insert new preferences
+            # Service role key bypasses RLS automatically
             update_data["tenant_id"] = request.tenant_id
-            result = supabase.table("tenant_preferences").insert(update_data).execute()
+            logger.info(f"Attempting to insert preferences for tenant_id: {request.tenant_id}")
+            result_response = postgrest_client.from_("tenant_preferences").insert(update_data).execute()
+            result = result_response.data if hasattr(result_response, 'data') else []
+            logger.info(f"Insert result: {result}")
         
-        if not result.data:
+        if not result:
             raise HTTPException(status_code=500, detail="Failed to save preferences")
         
         return SavePreferencesResponse(success=True)
         
     except HTTPException:
         raise
+    except PostgrestAPIError as e:
+        error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
+        error_code = error_dict.get('code', 'UNKNOWN')
+        error_message = error_dict.get('message', str(e))
+        
+        logger.error(f"PostgREST error saving preferences: {error_code} - {error_message}")
+        logger.error(f"Service role key configured: {SUPABASE_SERVICE_KEY[:20] if SUPABASE_SERVICE_KEY else 'NOT SET'}...")
+        
+        if error_code == '42501':
+            return SavePreferencesResponse(
+                success=False,
+                error=f"Permission denied. Service role key may not be configured correctly. Error: {error_message}"
+            )
+        
+        return SavePreferencesResponse(
+            success=False,
+            error=f"Database error ({error_code}): {error_message}"
+        )
     except Exception as e:
         logger.error(f"Error saving preferences: {e}", exc_info=True)
+        logger.error(f"Service role key configured: {SUPABASE_SERVICE_KEY[:20] if SUPABASE_SERVICE_KEY else 'NOT SET'}...")
         return SavePreferencesResponse(
             success=False,
             error=str(e)
