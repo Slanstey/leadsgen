@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { Lead, LeadStatus } from "@/types/lead";
 import { useNavigate } from "react-router-dom";
 import {
@@ -79,8 +79,8 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
         </TableHeader>
         <TableBody>
           {leads.map((lead) => (
-            <>
-              <TableRow key={lead.id}>
+            <Fragment key={lead.id}>
+              <TableRow>
                 <TableCell>
                   <button
                     onClick={() => handleCompanyClick(lead.companyName)}
@@ -179,7 +179,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                   </TableCell>
                 </TableRow>
               )}
-            </>
+            </Fragment>
           ))}
         </TableBody>
       </Table>

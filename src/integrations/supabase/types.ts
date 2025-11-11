@@ -234,6 +234,15 @@ export type Database = {
           email: string | null
           full_name: string | null
           id: string
+          linkedin_access_token: string | null
+          linkedin_connected_at: string | null
+          linkedin_first_name: string | null
+          linkedin_headline: string | null
+          linkedin_last_name: string | null
+          linkedin_profile_id: string | null
+          linkedin_profile_url: string | null
+          linkedin_refresh_token: string | null
+          linkedin_token_expires_at: string | null
           role: string | null
           tenant_id: string
           updated_at: string | null
@@ -243,6 +252,15 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id: string
+          linkedin_access_token?: string | null
+          linkedin_connected_at?: string | null
+          linkedin_first_name?: string | null
+          linkedin_headline?: string | null
+          linkedin_last_name?: string | null
+          linkedin_profile_id?: string | null
+          linkedin_profile_url?: string | null
+          linkedin_refresh_token?: string | null
+          linkedin_token_expires_at?: string | null
           role?: string | null
           tenant_id: string
           updated_at?: string | null
@@ -252,6 +270,15 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+          linkedin_access_token?: string | null
+          linkedin_connected_at?: string | null
+          linkedin_first_name?: string | null
+          linkedin_headline?: string | null
+          linkedin_last_name?: string | null
+          linkedin_profile_id?: string | null
+          linkedin_profile_url?: string | null
+          linkedin_refresh_token?: string | null
+          linkedin_token_expires_at?: string | null
           role?: string | null
           tenant_id?: string
           updated_at?: string | null

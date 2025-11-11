@@ -5,7 +5,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+import secrets
+import urllib.parse
+import requests
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -48,6 +51,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # Initialize Supabase client
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 
 if not SUPABASE_URL:
     raise ValueError("SUPABASE_URL must be set in environment variables")
@@ -58,21 +62,27 @@ if not SUPABASE_SERVICE_KEY:
         "This should be the SERVICE_ROLE key (secret), not the ANON key (publishable)."
     )
 
-# Initialize Supabase client with service role key
+if not SUPABASE_ANON_KEY:
+    raise ValueError(
+        "SUPABASE_ANON_KEY must be set in environment variables.\n"
+        "This is needed for user authentication verification."
+    )
+
+# Initialize Supabase client with service role key for database operations
 # Service role key bypasses RLS automatically
-# Verify the key format (service role keys start with 'eyJ' and are JWT tokens)
 if not SUPABASE_SERVICE_KEY.startswith('eyJ'):
     logger.warning("WARNING: SUPABASE_SERVICE_ROLE_KEY doesn't look like a service role key (should start with 'eyJ')")
     logger.warning("Make sure you're using the SERVICE_ROLE key, not the ANON key")
 
-# Initialize Supabase client with service role key
-# Service role key bypasses RLS automatically
-# Note: We'll create a separate client for auth operations vs table operations
+# Service role client for database operations (bypasses RLS)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+# Anon key client for auth operations (validates user sessions properly)
+supabase_auth: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 # Log that we're using service role (for debugging)
 logger.info(f"Supabase client initialized with service role key (RLS bypass enabled)")
-logger.info(f"Service role key starts with: {SUPABASE_SERVICE_KEY[:10]}...")
+logger.info(f"Supabase auth client initialized with anon key for user verification")
 
 # Initialize LinkedIn Search Service
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY_ForSearchLinkedIn")
@@ -86,7 +96,39 @@ if not GOOGLE_CSE_ID:
 
 linkedin_search_service = LinkedInSearchService(GOOGLE_API_KEY, GOOGLE_CSE_ID)
 
+# LinkedIn OAuth Configuration
+LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
+LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
+
+# LinkedIn OAuth URLs
+LINKEDIN_AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
+LINKEDIN_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
+# LinkedIn OpenID Connect userinfo endpoint
+LINKEDIN_PROFILE_API = "https://api.linkedin.com/v2/userinfo"
+# Alternative: LinkedIn REST API v2 endpoint (if OpenID Connect doesn't work)
+LINKEDIN_REST_API = "https://api.linkedin.com/v2/me"
+
+# Store OAuth state temporarily (in production, use Redis or database)
+oauth_states = {}
+
 # Request/Response Models
+class LinkedInConnectRequest(BaseModel):
+    user_id: str
+    redirect_uri: str
+
+class LinkedInConnectResponse(BaseModel):
+    auth_url: str
+    state: str
+
+class LinkedInCallbackRequest(BaseModel):
+    code: str
+    state: str
+    user_id: str
+
+class LinkedInCallbackResponse(BaseModel):
+    success: bool
+    error: Optional[str] = None
+
 class LinkedInSearchRequest(BaseModel):
     locations: List[str]
     positions: List[str]
@@ -135,11 +177,13 @@ def verify_auth(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
     
     try:
-        response = supabase.auth.get_user(token)
+        # Use anon key client for auth verification (validates user sessions properly)
+        response = supabase_auth.auth.get_user(token)
         
         if not response.user:
             raise HTTPException(status_code=401, detail="Invalid token")
         
+        # Use service role client for database queries (bypasses RLS)
         profile_result = supabase.table("user_profiles").select("tenant_id").eq("id", response.user.id).limit(1).execute()
         
         if not profile_result.data or len(profile_result.data) == 0:
@@ -170,6 +214,210 @@ def verify_auth(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Authentication error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+
+@app.post("/api/linkedin/connect", response_model=LinkedInConnectResponse)
+async def connect_linkedin(
+    request: LinkedInConnectRequest,
+    user_info: Dict[str, Any] = Depends(verify_auth)
+):
+    """Initiate LinkedIn OAuth flow"""
+    
+    # Verify user_id matches
+    if request.user_id != user_info["user_id"]:
+        raise HTTPException(status_code=403, detail="User ID mismatch")
+    
+    if not LINKEDIN_CLIENT_ID or not LINKEDIN_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=500,
+            detail="LinkedIn OAuth is not configured. Please set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET environment variables."
+        )
+    
+    # Generate state for CSRF protection
+    state = secrets.token_urlsafe(32)
+    oauth_states[state] = {
+        "user_id": request.user_id,
+        "redirect_uri": request.redirect_uri,
+        "created_at": datetime.utcnow()
+    }
+    
+    # Build authorization URL
+    params = {
+        "response_type": "code",
+        "client_id": LINKEDIN_CLIENT_ID,
+        "redirect_uri": request.redirect_uri,
+        "state": state,
+        "scope": "openid profile email"  # Request basic profile info
+    }
+    
+    auth_url = f"{LINKEDIN_AUTH_URL}?{urllib.parse.urlencode(params)}"
+    
+    return LinkedInConnectResponse(
+        auth_url=auth_url,
+        state=state
+    )
+
+@app.post("/api/linkedin/callback", response_model=LinkedInCallbackResponse)
+async def linkedin_callback(
+    request: LinkedInCallbackRequest,
+    user_info: Dict[str, Any] = Depends(verify_auth)
+):
+    """Handle LinkedIn OAuth callback"""
+    
+    # Verify user_id matches
+    if request.user_id != user_info["user_id"]:
+        raise HTTPException(status_code=403, detail="User ID mismatch")
+    
+    if not LINKEDIN_CLIENT_ID or not LINKEDIN_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=500,
+            detail="LinkedIn OAuth is not configured. Please set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET environment variables."
+        )
+    
+    # Verify state
+    if request.state not in oauth_states:
+        return LinkedInCallbackResponse(
+            success=False,
+            error="Invalid or expired state parameter"
+        )
+    
+    state_data = oauth_states[request.state]
+    
+    # Verify state belongs to this user
+    if state_data["user_id"] != request.user_id:
+        return LinkedInCallbackResponse(
+            success=False,
+            error="State mismatch"
+        )
+    
+    # Clean up state (one-time use)
+    del oauth_states[request.state]
+    
+    try:
+        # Exchange authorization code for access token
+        token_data = {
+            "grant_type": "authorization_code",
+            "code": request.code,
+            "redirect_uri": state_data["redirect_uri"],
+            "client_id": LINKEDIN_CLIENT_ID,
+            "client_secret": LINKEDIN_CLIENT_SECRET
+        }
+        
+        token_response = requests.post(
+            LINKEDIN_TOKEN_URL,
+            data=token_data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+        
+        if token_response.status_code != 200:
+            logger.error(f"LinkedIn token exchange failed: {token_response.text}")
+            return LinkedInCallbackResponse(
+                success=False,
+                error=f"Failed to exchange authorization code: {token_response.text}"
+            )
+        
+        token_json = token_response.json()
+        access_token = token_json.get("access_token")
+        expires_in = token_json.get("expires_in", 3600)  # Default to 1 hour
+        refresh_token = token_json.get("refresh_token")
+        
+        if not access_token:
+            return LinkedInCallbackResponse(
+                success=False,
+                error="No access token received from LinkedIn"
+            )
+        
+        # Fetch user profile from LinkedIn
+        # Try OpenID Connect endpoint first
+        profile_response = requests.get(
+            LINKEDIN_PROFILE_API,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+        )
+        
+        # If OpenID Connect fails, try REST API v2
+        if profile_response.status_code != 200:
+            logger.warning(f"OpenID Connect endpoint failed, trying REST API: {profile_response.text}")
+            profile_response = requests.get(
+                LINKEDIN_REST_API,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json"
+                }
+            )
+        
+        if profile_response.status_code != 200:
+            logger.error(f"LinkedIn profile fetch failed: {profile_response.text}")
+            return LinkedInCallbackResponse(
+                success=False,
+                error=f"Failed to fetch LinkedIn profile: {profile_response.text}"
+            )
+        
+        profile_data = profile_response.json()
+        
+        # Extract profile information (handle both OpenID Connect and REST API formats)
+        linkedin_profile_id = profile_data.get("sub") or profile_data.get("id")
+        linkedin_first_name = (
+            profile_data.get("given_name") or 
+            profile_data.get("firstName", {}).get("localized", {}).get("en_US") or
+            profile_data.get("firstName")
+        )
+        linkedin_last_name = (
+            profile_data.get("family_name") or 
+            profile_data.get("lastName", {}).get("localized", {}).get("en_US") or
+            profile_data.get("lastName")
+        )
+        linkedin_email = profile_data.get("email")
+        
+        # Build profile URL - LinkedIn uses numeric IDs or vanity URLs
+        linkedin_profile_url = None
+        if linkedin_profile_id:
+            # Try to get vanity name from profile, otherwise use ID
+            vanity_name = profile_data.get("vanityName") or profile_data.get("vanity_name")
+            if vanity_name:
+                linkedin_profile_url = f"https://www.linkedin.com/in/{vanity_name}"
+            else:
+                linkedin_profile_url = f"https://www.linkedin.com/in/{linkedin_profile_id}"
+        
+        # Calculate token expiration
+        token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+        
+        # Update user profile with LinkedIn data
+        update_data = {
+            "linkedin_access_token": access_token,
+            "linkedin_refresh_token": refresh_token,
+            "linkedin_profile_id": linkedin_profile_id,
+            "linkedin_profile_url": linkedin_profile_url,
+            "linkedin_first_name": linkedin_first_name,
+            "linkedin_last_name": linkedin_last_name,
+            "linkedin_headline": profile_data.get("headline") or None,
+            "linkedin_connected_at": datetime.utcnow().isoformat(),
+            "linkedin_token_expires_at": token_expires_at.isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+        # Remove None values
+        update_data = {k: v for k, v in update_data.items() if v is not None}
+        
+        result = supabase.table("user_profiles").update(update_data).eq("id", request.user_id).execute()
+        
+        if not result.data:
+            return LinkedInCallbackResponse(
+                success=False,
+                error="Failed to update user profile"
+            )
+        
+        logger.info(f"LinkedIn account connected for user {request.user_id}")
+        
+        return LinkedInCallbackResponse(success=True)
+        
+    except Exception as e:
+        logger.error(f"Error in LinkedIn callback: {e}", exc_info=True)
+        return LinkedInCallbackResponse(
+            success=False,
+            error=str(e)
+        )
 
 # API Endpoints
 @app.post("/api/search-linkedin", response_model=LinkedInSearchResponse)
@@ -398,6 +646,36 @@ async def save_preferences(
             success=False,
             error=str(e)
         )
+
+@app.options("/api/linkedin/connect")
+async def options_linkedin_connect():
+    """Handle CORS preflight for linkedin/connect endpoint"""
+    return JSONResponse(
+        status_code=200,
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
+
+@app.options("/api/linkedin/callback")
+async def options_linkedin_callback():
+    """Handle CORS preflight for linkedin/callback endpoint"""
+    return JSONResponse(
+        status_code=200,
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
 
 @app.options("/api/search-linkedin")
 async def options_search_linkedin():

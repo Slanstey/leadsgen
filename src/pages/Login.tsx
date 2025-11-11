@@ -14,15 +14,8 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
-  const { signIn, signUp, user, profile, loading: authLoading } = useAuth();
+  const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
-
-  // Redirect if already logged in
-  useEffect(() => {
-    if (!authLoading && user && profile) {
-      navigate("/", { replace: true });
-    }
-  }, [user, profile, authLoading, navigate]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,14 +34,14 @@ const Login = () => {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Extract organization name from email domain
     const emailDomain = email.split('@')[1];
     if (!emailDomain) {
       toast.error("Please enter a valid email address");
       return;
     }
-    
+
     // Extract organization name from domain (e.g., "example.com" -> "example")
     const organizationName = emailDomain.split('.')[0];
 
@@ -88,7 +81,7 @@ const Login = () => {
               <TabsTrigger value="signin">Sign In</TabsTrigger>
               <TabsTrigger value="signup">Sign Up</TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="signin" className="space-y-4 mt-4">
               <form onSubmit={handleSignIn} className="space-y-4">
                 <div className="space-y-2">
@@ -126,7 +119,7 @@ const Login = () => {
                 </Button>
               </form>
             </TabsContent>
-            
+
             <TabsContent value="signup" className="space-y-4 mt-4">
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div className="space-y-2">

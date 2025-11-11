@@ -240,14 +240,9 @@ const Index = () => {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={async () => {
-                    try {
-                      await signOut();
-                      navigate("/login", { replace: true });
-                      toast.success("Successfully signed out");
-                    } catch (error) {
-                      console.error("Sign out error:", error);
-                      toast.error("Failed to sign out");
-                    }
+                    await signOut();
+                    navigate("/login", { replace: true });
+                    toast.success("Successfully signed out");
                   }}
                 >
                   <LogOut className="mr-2 h-4 w-4" />
