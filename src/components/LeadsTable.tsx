@@ -112,6 +112,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                       <SelectItem value="in_progress">In Progress</SelectItem>
                       <SelectItem value="closed_won">Closed Won</SelectItem>
                       <SelectItem value="closed_lost">Closed Lost</SelectItem>
+                      <SelectItem value="ignored">Ignored</SelectItem>
                     </SelectContent>
                   </Select>
                 </TableCell>

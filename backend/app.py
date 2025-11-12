@@ -148,16 +148,16 @@ class SavePreferencesRequest(BaseModel):
     # General preferences
     target_industry: Optional[str] = None
     company_size: Optional[str] = None
-    geographic_region: Optional[str] = None
-    target_roles: Optional[str] = None
+    locations: Optional[str] = None
+    target_positions: Optional[str] = None
     revenue_range: Optional[str] = None
     keywords: Optional[str] = None
     notes: Optional[str] = None
-    # LinkedIn preferences
-    linkedin_locations: Optional[str] = None
-    linkedin_positions: Optional[str] = None
-    linkedin_experience_operator: Optional[str] = "="
-    linkedin_experience_years: Optional[int] = 0
+    experience_operator: Optional[str] = "="
+    experience_years: Optional[int] = 0
+    company_type: Optional[str] = None
+    technology_stack: Optional[str] = None
+    funding_stage: Optional[str] = None
 
 class SavePreferencesResponse(BaseModel):
     success: bool
@@ -166,6 +166,14 @@ class SavePreferencesResponse(BaseModel):
 class GetPreferencesResponse(BaseModel):
     success: bool
     preferences: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+class GenerateLeadsRequest(BaseModel):
+    tenant_id: str
+
+class GenerateLeadsResponse(BaseModel):
+    success: bool
+    leads_created: int
     error: Optional[str] = None
 
 # Authentication
@@ -214,6 +222,29 @@ def verify_auth(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Authentication error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+
+def verify_admin(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+    """Verify JWT token and check if user is admin"""
+    user_info = verify_auth(authorization)
+    
+    try:
+        # Check if user is admin
+        profile_result = supabase.table("user_profiles").select("is_admin").eq("id", user_info["user_id"]).single().execute()
+        
+        if not profile_result.data:
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
+        is_admin = profile_result.data.get("is_admin", False)
+        
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        return user_info
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin verification error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Admin verification failed: {str(e)}")
 
 @app.post("/api/linkedin/connect", response_model=LinkedInConnectResponse)
 async def connect_linkedin(
@@ -541,10 +572,10 @@ async def save_preferences(
         raise HTTPException(status_code=403, detail="Tenant ID mismatch")
     
     # Validate inputs
-    if request.linkedin_experience_operator and request.linkedin_experience_operator not in [">", "<", "="]:
+    if request.experience_operator and request.experience_operator not in [">", "<", "="]:
         raise HTTPException(status_code=400, detail="experience_operator must be '>', '<', or '='")
     
-    if request.linkedin_experience_years is not None and (request.linkedin_experience_years < 0 or request.linkedin_experience_years > 30):
+    if request.experience_years is not None and (request.experience_years < 0 or request.experience_years > 30):
         raise HTTPException(status_code=400, detail="experience_years must be between 0 and 30")
     
     try:
@@ -558,10 +589,10 @@ async def save_preferences(
             update_data["target_industry"] = request.target_industry
         if request.company_size is not None:
             update_data["company_size"] = request.company_size
-        if request.geographic_region is not None:
-            update_data["geographic_region"] = request.geographic_region
-        if request.target_roles is not None:
-            update_data["target_roles"] = request.target_roles
+        if request.locations is not None:
+            update_data["locations"] = request.locations
+        if request.target_positions is not None:
+            update_data["target_positions"] = request.target_positions
         if request.revenue_range is not None:
             update_data["revenue_range"] = request.revenue_range
         if request.keywords is not None:
@@ -569,15 +600,19 @@ async def save_preferences(
         if request.notes is not None:
             update_data["notes"] = request.notes
         
-        # Add LinkedIn preferences if provided
-        if request.linkedin_locations is not None:
-            update_data["linkedin_locations"] = request.linkedin_locations
-        if request.linkedin_positions is not None:
-            update_data["linkedin_positions"] = request.linkedin_positions
-        if request.linkedin_experience_operator is not None:
-            update_data["linkedin_experience_operator"] = request.linkedin_experience_operator
-        if request.linkedin_experience_years is not None:
-            update_data["linkedin_experience_years"] = request.linkedin_experience_years
+        # Add consolidated experience fields if provided
+        if request.experience_operator is not None:
+            update_data["experience_operator"] = request.experience_operator
+        if request.experience_years is not None:
+            update_data["experience_years"] = request.experience_years
+        
+        # Add new fields if provided
+        if request.company_type is not None:
+            update_data["company_type"] = request.company_type
+        if request.technology_stack is not None:
+            update_data["technology_stack"] = request.technology_stack
+        if request.funding_stage is not None:
+            update_data["funding_stage"] = request.funding_stage
         
         # Check if preferences record exists
         # Use PostgREST client directly with service role key to ensure RLS bypass
@@ -716,6 +751,134 @@ async def options_get_preferences():
         headers={
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
+
+# Admin Endpoints
+@app.post("/api/admin/generate-leads", response_model=GenerateLeadsResponse)
+async def generate_leads(
+    request: GenerateLeadsRequest,
+    user_info: Dict[str, Any] = Depends(verify_admin)
+):
+    """Generate leads for a tenant based on their preferences and method"""
+    try:
+        # Get tenant preferences
+        prefs_result = supabase.table("tenant_preferences").select("*").eq("tenant_id", request.tenant_id).execute()
+        
+        if not prefs_result.data or len(prefs_result.data) == 0:
+            return GenerateLeadsResponse(
+                success=False,
+                leads_created=0,
+                error="Tenant preferences not found. Please configure preferences first."
+            )
+        
+        preferences = prefs_result.data[0]
+        lead_generation_methods = preferences.get("lead_generation_method")
+        
+        if not lead_generation_methods or not isinstance(lead_generation_methods, list) or len(lead_generation_methods) == 0:
+            return GenerateLeadsResponse(
+                success=False,
+                leads_created=0,
+                error="Lead generation methods not set for this tenant. Please select at least one method first."
+            )
+        
+        leads_created = 0
+        errors = []
+        
+        # Generate leads for each selected method
+        for lead_generation_method in lead_generation_methods:
+            try:
+                # Generate leads based on method
+                if lead_generation_method == "linkedin_search":
+                    # Use consolidated fields for LinkedIn search
+                    locations_str = preferences.get("locations") or preferences.get("linkedin_locations") or preferences.get("geographic_region")
+                    positions_str = preferences.get("target_positions") or preferences.get("linkedin_positions") or preferences.get("target_roles")
+                    
+                    if not locations_str or not positions_str:
+                        errors.append("Locations and target positions must be configured for LinkedIn search.")
+                        continue
+                    
+                    # Parse locations and positions (comma-separated)
+                    locations = [loc.strip() for loc in locations_str.split(",") if loc.strip()]
+                    positions = [pos.strip() for pos in positions_str.split(",") if pos.strip()]
+                    
+                    if not locations or not positions:
+                        errors.append("Invalid locations or positions format.")
+                        continue
+                    
+                    experience_operator = preferences.get("experience_operator") or preferences.get("linkedin_experience_operator", "=")
+                    experience_years = preferences.get("experience_years") or preferences.get("linkedin_experience_years", 0)
+                    
+                    # Search LinkedIn profiles
+                    profiles = linkedin_search_service.search_profiles(
+                        locations=locations,
+                        positions=positions,
+                        experience_operator=experience_operator,
+                        experience_years=experience_years,
+                        limit=50  # Generate up to 50 leads
+                    )
+                    
+                    # Prepare leads for insertion
+                    leads_to_insert = []
+                    for profile in profiles:
+                        leads_to_insert.append({
+                            "tenant_id": request.tenant_id,
+                            "contact_person": profile["name"],
+                            "company_name": profile["company"],
+                            "role": profile["role"],
+                            "contact_email": "",
+                            "status": "not_contacted",
+                        })
+                    
+                    # Insert leads into Supabase
+                    if leads_to_insert:
+                        result = supabase.table("leads").insert(leads_to_insert).execute()
+                        leads_created += len(result.data) if result.data else 0
+                
+                elif lead_generation_method in ["google_custom_search", "google_places_api", "pure_llm", "agentic_workflow", "linkedin_sales_navigator"]:
+                    # Placeholder for other methods - log error but continue with other methods
+                    errors.append(f"Lead generation method '{lead_generation_method}' is not yet implemented.")
+                else:
+                    errors.append(f"Unknown lead generation method: {lead_generation_method}")
+            except Exception as e:
+                logger.error(f"Error generating leads with method {lead_generation_method}: {str(e)}")
+                errors.append(f"Error with {lead_generation_method}: {str(e)}")
+        
+        # Return response with any errors
+        if leads_created > 0:
+            error_msg = "; ".join(errors) if errors else None
+            return GenerateLeadsResponse(
+                success=True,
+                leads_created=leads_created,
+                error=error_msg
+            )
+        else:
+            return GenerateLeadsResponse(
+                success=False,
+                leads_created=0,
+                error="; ".join(errors) if errors else "Failed to generate leads with any selected method."
+            )
+        
+    except Exception as e:
+        logger.error(f"Error generating leads: {e}", exc_info=True)
+        return GenerateLeadsResponse(
+            success=False,
+            leads_created=0,
+            error=str(e)
+        )
+
+@app.options("/api/admin/generate-leads")
+async def options_admin_generate_leads():
+    """Handle CORS preflight for admin generate leads endpoint"""
+    return JSONResponse(
+        status_code=200,
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Allow-Credentials": "true",
             "Access-Control-Max-Age": "3600",

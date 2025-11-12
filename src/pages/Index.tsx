@@ -18,6 +18,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BarChart3, Settings, Search, Menu, Home, LogOut } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -29,6 +31,7 @@ const Index = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
   const [companySearch, setCompanySearch] = useState("");
+  const [showIgnored, setShowIgnored] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +44,7 @@ const Index = () => {
 
     try {
       setLoading(true);
+      setError(null);
       
       // Check if Supabase is configured
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -110,15 +114,17 @@ const Index = () => {
   }, [profile?.tenant_id]);
 
   useEffect(() => {
-    fetchLeads();
-  }, [fetchLeads]);
+    if (profile?.tenant_id) {
+      fetchLeads();
+    }
+  }, [profile?.tenant_id]); // Only depend on tenant_id, not fetchLeads
 
   // Refetch when navigating back to this page
   useEffect(() => {
-    if (location.pathname === "/" && profile?.tenant_id) {
+    if (location.pathname === "/" && profile?.tenant_id && !loading) {
       fetchLeads();
     }
-  }, [location.pathname, profile?.tenant_id, fetchLeads]);
+  }, [location.pathname, profile?.tenant_id]); // Remove fetchLeads from dependencies
 
   const handleStatusChange = async (leadId: string, newStatus: LeadStatus) => {
     try {
@@ -200,14 +206,28 @@ const Index = () => {
   };
 
   const filteredLeads = useMemo(() => {
-    return leads.filter((lead) => {
-      const matchesStatus = statusFilter === "all" || lead.status === statusFilter;
-      const matchesCompany = lead.companyName
-        .toLowerCase()
-        .includes(companySearch.toLowerCase());
-      return matchesStatus && matchesCompany;
-    });
-  }, [leads, statusFilter, companySearch]);
+    try {
+      if (!leads || leads.length === 0) {
+        return [];
+      }
+      
+      return leads.filter((lead) => {
+        // Filter out ignored leads by default unless showIgnored is true
+        if (lead.status === "ignored" && !showIgnored) {
+          return false;
+        }
+        
+        const matchesStatus = statusFilter === "all" || lead.status === statusFilter;
+        const matchesCompany = lead.companyName
+          .toLowerCase()
+          .includes(companySearch.toLowerCase());
+        return matchesStatus && matchesCompany;
+      });
+    } catch (error) {
+      console.error("Error filtering leads:", error);
+      return leads || [];
+    }
+  }, [leads, statusFilter, companySearch, showIgnored]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -238,6 +258,12 @@ const Index = () => {
                   <Settings className="mr-2 h-4 w-4" />
                   Settings
                 </DropdownMenuItem>
+                {(profile as any)?.is_admin && (
+                  <DropdownMenuItem onClick={() => navigate("/admin")}>
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    Admin Dashboard
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={async () => {
                     await signOut();
@@ -312,8 +338,24 @@ const Index = () => {
               <SelectItem value="in_progress">In Progress</SelectItem>
               <SelectItem value="closed_won">Closed Won</SelectItem>
               <SelectItem value="closed_lost">Closed Lost</SelectItem>
+              <SelectItem value="ignored">Ignored</SelectItem>
             </SelectContent>
           </Select>
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="showIgnored"
+              checked={showIgnored}
+              onCheckedChange={(checked) => {
+                setShowIgnored(checked === true);
+              }}
+            />
+            <Label
+              htmlFor="showIgnored"
+              className="text-sm font-normal cursor-pointer"
+            >
+              Show ignored leads
+            </Label>
+          </div>
         </div>
 
         {loading ? (

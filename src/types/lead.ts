@@ -4,7 +4,8 @@ export type LeadStatus =
   | "qualified" 
   | "in_progress" 
   | "closed_won" 
-  | "closed_lost";
+  | "closed_lost"
+  | "ignored";
 
 export interface Lead {
   id: string;

@@ -11,6 +11,9 @@ import CompanyDetail from "./pages/CompanyDetail";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import AdminDashboard from "./pages/AdminDashboard";
+import AdminTenantDetail from "./pages/AdminTenantDetail";
+import { AdminRoute } from "./components/AdminRoute";
 
 const queryClient = new QueryClient();
 
@@ -49,6 +52,8 @@ const AppRoutes = () => {
       <Route path="/" element={<Index />} />
       <Route path="/company/:companyName" element={<CompanyDetail />} />
       <Route path="/settings" element={<Settings />} />
+      <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+      <Route path="/admin/tenants/:tenantId" element={<AdminRoute><AdminTenantDetail /></AdminRoute>} />
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="*" element={<NotFound />} />
     </Routes>

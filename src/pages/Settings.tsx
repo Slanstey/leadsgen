@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Save, Search, Loader2, Link2, Unlink } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Link2, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -23,21 +23,19 @@ const Settings = () => {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [searching, setSearching] = useState(false);
   const [formData, setFormData] = useState({
     targetIndustry: "",
     companySize: "",
-    geographicRegion: "",
-    targetRoles: "",
+    locations: "",
+    targetPositions: "",
     revenueRange: "",
     keywords: "",
     notes: "",
-  });
-  const [linkedinData, setLinkedinData] = useState({
-    locations: "",
-    positions: "",
     experienceOperator: "=",
     experienceYears: 0,
+    companyType: "",
+    technologyStack: "",
+    fundingStage: "",
   });
   const [linkedinConnecting, setLinkedinConnecting] = useState(false);
   const [linkedinDisconnecting, setLinkedinDisconnecting] = useState(false);
@@ -180,23 +178,20 @@ const Settings = () => {
         }
 
         if (prefs) {
-          // Load general preferences
+          // Load consolidated preferences
           setFormData({
             targetIndustry: prefs.target_industry || "",
             companySize: prefs.company_size || "",
-            geographicRegion: prefs.geographic_region || "",
-            targetRoles: prefs.target_roles || "",
+            locations: prefs.locations || prefs.geographic_region || prefs.linkedin_locations || "",
+            targetPositions: prefs.target_positions || prefs.target_roles || prefs.linkedin_positions || "",
             revenueRange: prefs.revenue_range || "",
             keywords: prefs.keywords || "",
             notes: prefs.notes || "",
-          });
-          
-          // Load LinkedIn search settings
-          setLinkedinData({
-            locations: prefs.linkedin_locations || "",
-            positions: prefs.linkedin_positions || "",
-            experienceOperator: prefs.linkedin_experience_operator || "=",
-            experienceYears: prefs.linkedin_experience_years || 0,
+            experienceOperator: prefs.experience_operator || prefs.linkedin_experience_operator || "=",
+            experienceYears: prefs.experience_years || prefs.linkedin_experience_years || 0,
+            companyType: prefs.company_type || "",
+            technologyStack: prefs.technology_stack || "",
+            fundingStage: prefs.funding_stage || "",
           });
         }
       } catch (error) {
@@ -217,22 +212,22 @@ const Settings = () => {
 
     setSaving(true);
     try {
-      // Prepare preferences data
+      // Prepare preferences data with consolidated fields
       const preferencesData = {
         tenant_id: profile.tenant_id,
         // General preferences
         target_industry: formData.targetIndustry || null,
         company_size: formData.companySize || null,
-        geographic_region: formData.geographicRegion || null,
-        target_roles: formData.targetRoles || null,
+        locations: formData.locations || null,
+        target_positions: formData.targetPositions || null,
         revenue_range: formData.revenueRange || null,
         keywords: formData.keywords || null,
         notes: formData.notes || null,
-        // LinkedIn preferences
-        linkedin_locations: linkedinData.locations || null,
-        linkedin_positions: linkedinData.positions || null,
-        linkedin_experience_operator: linkedinData.experienceOperator || "=",
-        linkedin_experience_years: Number(linkedinData.experienceYears) || 0,
+        experience_operator: formData.experienceOperator || "=",
+        experience_years: Number(formData.experienceYears) || 0,
+        company_type: formData.companyType || null,
+        technology_stack: formData.technologyStack || null,
+        funding_stage: formData.fundingStage || null,
         updated_at: new Date().toISOString(),
       };
 
@@ -390,89 +385,6 @@ const Settings = () => {
     }
   };
 
-  const handleSearchLinkedIn = async () => {
-    if (!profile?.tenant_id) {
-      toast.error("You must be logged in to search LinkedIn");
-      return;
-    }
-
-    if (!linkedinData.locations || !linkedinData.positions) {
-      toast.error("Please fill in locations and positions before searching");
-      return;
-    }
-
-    setSearching(true);
-    
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast.error("You must be logged in to search LinkedIn");
-        setSearching(false);
-        return;
-      }
-
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-      
-      const locations = linkedinData.locations
-        .split(',')
-        .map(l => l.trim())
-        .filter(l => l.length > 0);
-      
-      const positions = linkedinData.positions
-        .split(',')
-        .map(p => p.trim())
-        .filter(p => p.length > 0);
-      
-      if (locations.length === 0 || positions.length === 0) {
-        toast.error("Please fill in at least one location and one position");
-        setSearching(false);
-        return;
-      }
-      
-      const response = await fetch(`${backendUrl}/api/search-linkedin`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          locations: locations,
-          positions: positions,
-          experience_operator: linkedinData.experienceOperator,
-          experience_years: Number(linkedinData.experienceYears) || 0,
-          tenant_id: profile.tenant_id,
-          limit: 10,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { error: errorText || 'Unknown error' };
-        }
-        throw new Error(errorData.error || errorData.detail || `HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.success) {
-        toast.success(`Successfully found ${data.profiles_found} profiles and created ${data.leads_created} leads`);
-        setTimeout(() => {
-          navigate("/");
-        }, 1500);
-      } else {
-        toast.error(data.error || "Failed to search LinkedIn");
-      }
-    } catch (error) {
-      console.error("Error searching LinkedIn:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to search LinkedIn");
-    } finally {
-      setSearching(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -643,15 +555,18 @@ const Settings = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="geographicRegion">Geographic Region</Label>
+                <Label htmlFor="locations">Locations</Label>
                 <Input
-                  id="geographicRegion"
-                  placeholder="e.g., North America, APAC, Europe"
-                  value={formData.geographicRegion}
+                  id="locations"
+                  placeholder="e.g., New York, San Francisco, London, North America, APAC"
+                  value={formData.locations}
                   onChange={(e) =>
-                    setFormData({ ...formData, geographicRegion: e.target.value })
+                    setFormData({ ...formData, locations: e.target.value })
                   }
                 />
+                <p className="text-xs text-muted-foreground">
+                  Comma-separated list of locations or regions
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -675,20 +590,121 @@ const Settings = () => {
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="companyType">Company Type</Label>
+                <Select
+                  value={formData.companyType}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, companyType: value })
+                  }
+                >
+                  <SelectTrigger id="companyType">
+                    <SelectValue placeholder="Select company type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="B2B">B2B</SelectItem>
+                    <SelectItem value="B2C">B2C</SelectItem>
+                    <SelectItem value="Enterprise">Enterprise</SelectItem>
+                    <SelectItem value="SMB">SMB</SelectItem>
+                    <SelectItem value="Startup">Startup</SelectItem>
+                    <SelectItem value="Non-profit">Non-profit</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="fundingStage">Funding Stage</Label>
+                <Select
+                  value={formData.fundingStage}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, fundingStage: value })
+                  }
+                >
+                  <SelectTrigger id="fundingStage">
+                    <SelectValue placeholder="Select funding stage" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Bootstrapped">Bootstrapped</SelectItem>
+                    <SelectItem value="Seed">Seed</SelectItem>
+                    <SelectItem value="Series A">Series A</SelectItem>
+                    <SelectItem value="Series B">Series B</SelectItem>
+                    <SelectItem value="Series C+">Series C+</SelectItem>
+                    <SelectItem value="Public">Public</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="targetRoles">Target Roles/Titles</Label>
+              <Label htmlFor="targetPositions">Target Positions/Roles</Label>
               <Input
-                id="targetRoles"
-                placeholder="e.g., CEO, COO, VP Operations, Chief Mining Officer"
-                value={formData.targetRoles}
+                id="targetPositions"
+                placeholder="e.g., CEO, CTO, VP Engineering, COO, VP Operations"
+                value={formData.targetPositions}
                 onChange={(e) =>
-                  setFormData({ ...formData, targetRoles: e.target.value })
+                  setFormData({ ...formData, targetPositions: e.target.value })
                 }
               />
               <p className="text-xs text-muted-foreground">
-                Comma-separated list of target roles
+                Comma-separated list of target positions or roles
+              </p>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="experienceOperator">Experience Operator</Label>
+                <Select
+                  value={formData.experienceOperator}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, experienceOperator: value })
+                  }
+                >
+                  <SelectTrigger id="experienceOperator">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value=">">Greater than</SelectItem>
+                    <SelectItem value="<">Less than</SelectItem>
+                    <SelectItem value="=">Equal to</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="experienceYears">Years of Experience</Label>
+                <Input
+                  id="experienceYears"
+                  type="number"
+                  min="0"
+                  max="30"
+                  placeholder="0"
+                  value={formData.experienceYears}
+                  onChange={(e) =>
+                    setFormData({ 
+                      ...formData, 
+                      experienceYears: parseInt(e.target.value) || 0 
+                    })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Number of years (0-30)
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="technologyStack">Technology Stack</Label>
+              <Input
+                id="technologyStack"
+                placeholder="e.g., Python, React, AWS, Docker, Kubernetes"
+                value={formData.technologyStack}
+                onChange={(e) =>
+                  setFormData({ ...formData, technologyStack: e.target.value })
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Preferred technologies or tools (comma-separated)
               </p>
             </div>
 
@@ -720,6 +736,7 @@ const Settings = () => {
               />
             </div>
 
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => navigate("/")}>
                 Cancel
@@ -732,117 +749,6 @@ const Settings = () => {
                 )}
                 Save Preferences
               </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>LinkedIn Profile Search</CardTitle>
-            <CardDescription>
-              Configure LinkedIn search settings to generate leads automatically. Results are limited to 10 per search to stay within API limits.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="linkedinLocations">Locations (Comma Separated)</Label>
-                <Input
-                  id="linkedinLocations"
-                  placeholder="e.g., New York, San Francisco, London"
-                  value={linkedinData.locations}
-                  onChange={(e) =>
-                    setLinkedinData({ ...linkedinData, locations: e.target.value })
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Comma-separated list of locations to search
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="linkedinPositions">Positions (Comma Separated)</Label>
-                <Input
-                  id="linkedinPositions"
-                  placeholder="e.g., CEO, CTO, VP Engineering"
-                  value={linkedinData.positions}
-                  onChange={(e) =>
-                    setLinkedinData({ ...linkedinData, positions: e.target.value })
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Comma-separated list of positions/titles to search
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="experienceOperator">Experience Operator</Label>
-                <Select
-                  value={linkedinData.experienceOperator}
-                  onValueChange={(value) =>
-                    setLinkedinData({ ...linkedinData, experienceOperator: value })
-                  }
-                >
-                  <SelectTrigger id="experienceOperator">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value=">">Greater than</SelectItem>
-                    <SelectItem value="<">Less than</SelectItem>
-                    <SelectItem value="=">Equal to</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="experienceYears">Years of Experience</Label>
-                <Input
-                  id="experienceYears"
-                  type="number"
-                  min="0"
-                  max="30"
-                  placeholder="0"
-                  value={linkedinData.experienceYears}
-                  onChange={(e) =>
-                    setLinkedinData({ 
-                      ...linkedinData, 
-                      experienceYears: parseInt(e.target.value) || 0 
-                    })
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Number of years (0-30)
-                </p>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Click the button below to search LinkedIn and add up to 10 leads to your database.
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button 
-                  onClick={handleSearchLinkedIn} 
-                  disabled={searching || !linkedinData.locations || !linkedinData.positions}
-                  className="gap-2"
-                >
-                  {searching ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Searching...
-                    </>
-                  ) : (
-                    <>
-                      <Search className="h-4 w-4" />
-                      Search LinkedIn (10 results)
-                    </>
-                  )}
-                </Button>
-              </div>
             </div>
           </CardContent>
         </Card>
