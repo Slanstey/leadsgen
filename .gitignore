@@ -21,6 +21,13 @@ dist/
 .env.test.local
 .env.production.local
 
+# Environment files - never commit these!
+backend/.env
+backend/.env.local
+backend/.env.*
+*.env
+*.env.local
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

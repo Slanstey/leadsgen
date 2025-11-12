@@ -107,6 +107,8 @@ LINKEDIN_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 LINKEDIN_PROFILE_API = "https://api.linkedin.com/v2/userinfo"
 # Alternative: LinkedIn REST API v2 endpoint (if OpenID Connect doesn't work)
 LINKEDIN_REST_API = "https://api.linkedin.com/v2/me"
+# LinkedIn Connections API endpoint (requires r_1st_connections permission)
+LINKEDIN_CONNECTIONS_API = "https://api.linkedin.com/v2/people/~/connections"
 
 # Store OAuth state temporarily (in production, use Redis or database)
 oauth_states = {}
@@ -127,6 +129,12 @@ class LinkedInCallbackRequest(BaseModel):
 
 class LinkedInCallbackResponse(BaseModel):
     success: bool
+    error: Optional[str] = None
+
+class LinkedInConnectionsResponse(BaseModel):
+    success: bool
+    connections_fetched: int
+    connections_stored: int
     error: Optional[str] = None
 
 class LinkedInSearchRequest(BaseModel):
@@ -241,12 +249,13 @@ async def connect_linkedin(
     }
     
     # Build authorization URL
+    # Request permissions: basic profile + connections (requires LinkedIn approval)
     params = {
         "response_type": "code",
         "client_id": LINKEDIN_CLIENT_ID,
         "redirect_uri": request.redirect_uri,
         "state": state,
-        "scope": "openid profile email"  # Request basic profile info
+        "scope": "openid profile email r_1st_connections"  # Request profile info and 1st-degree connections
     }
     
     auth_url = f"{LINKEDIN_AUTH_URL}?{urllib.parse.urlencode(params)}"
@@ -416,6 +425,168 @@ async def linkedin_callback(
         logger.error(f"Error in LinkedIn callback: {e}", exc_info=True)
         return LinkedInCallbackResponse(
             success=False,
+            error=str(e)
+        )
+
+@app.post("/api/linkedin/fetch-connections", response_model=LinkedInConnectionsResponse)
+async def fetch_linkedin_connections(
+    user_info: Dict[str, Any] = Depends(verify_auth)
+):
+    """Fetch and store LinkedIn connections for the authenticated user"""
+    
+    user_id = user_info["user_id"]
+    tenant_id = user_info["tenant_id"]
+    
+    try:
+        # Get user's LinkedIn access token
+        profile_result = supabase.table("user_profiles").select(
+            "linkedin_access_token, linkedin_profile_id"
+        ).eq("id", user_id).single().execute()
+        
+        if not profile_result.data:
+            return LinkedInConnectionsResponse(
+                success=False,
+                connections_fetched=0,
+                connections_stored=0,
+                error="User profile not found"
+            )
+        
+        access_token = profile_result.data.get("linkedin_access_token")
+        if not access_token:
+            return LinkedInConnectionsResponse(
+                success=False,
+                connections_fetched=0,
+                connections_stored=0,
+                error="LinkedIn account not connected. Please connect your LinkedIn account first."
+            )
+        
+        # Fetch connections from LinkedIn API
+        # Note: This requires r_1st_connections permission and LinkedIn approval
+        connections_response = requests.get(
+            LINKEDIN_CONNECTIONS_API,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            },
+            params={
+                "count": 500,  # LinkedIn allows up to 500 connections per request
+                "fields": "id,firstName,lastName,headline,location,positions,pictureUrl"
+            }
+        )
+        
+        if connections_response.status_code == 403:
+            return LinkedInConnectionsResponse(
+                success=False,
+                connections_fetched=0,
+                connections_stored=0,
+                error="LinkedIn Connections API access denied. Your app may need LinkedIn approval for r_1st_connections permission."
+            )
+        
+        if connections_response.status_code != 200:
+            logger.error(f"LinkedIn connections API failed: {connections_response.text}")
+            return LinkedInConnectionsResponse(
+                success=False,
+                connections_fetched=0,
+                connections_stored=0,
+                error=f"Failed to fetch connections: {connections_response.text}"
+            )
+        
+        connections_data = connections_response.json()
+        connections_list = connections_data.get("elements", [])
+        
+        if not connections_list:
+            return LinkedInConnectionsResponse(
+                success=True,
+                connections_fetched=0,
+                connections_stored=0,
+                error=None
+            )
+        
+        # Process and store connections
+        connections_to_insert = []
+        for connection in connections_list:
+            # Extract connection data
+            linkedin_id = connection.get("id", "").replace("urn:li:person:", "")
+            first_name = connection.get("firstName", {}).get("localized", {}).get("en_US") or connection.get("firstName", "")
+            last_name = connection.get("lastName", {}).get("localized", {}).get("en_US") or connection.get("lastName", "")
+            headline = connection.get("headline", {}).get("localized", {}).get("en_US") or connection.get("headline", "")
+            location = connection.get("location", {}).get("name", "") if connection.get("location") else ""
+            picture_url = connection.get("pictureUrl", "")
+            
+            # Get current position
+            positions = connection.get("positions", {}).get("elements", [])
+            company_name = ""
+            position = ""
+            if positions and len(positions) > 0:
+                current_position = positions[0]
+                company = current_position.get("company", {})
+                company_name = company.get("localizedName", "") or company.get("name", "")
+                position = current_position.get("title", {}).get("localized", {}).get("en_US") or current_position.get("title", "")
+            
+            # Build profile URL
+            profile_url = f"https://www.linkedin.com/in/{linkedin_id}" if linkedin_id else None
+            
+            connections_to_insert.append({
+                "user_profile_id": user_id,
+                "tenant_id": tenant_id,
+                "linkedin_profile_id": linkedin_id,
+                "linkedin_profile_url": profile_url,
+                "first_name": first_name,
+                "last_name": last_name,
+                "headline": headline,
+                "company_name": company_name,
+                "position": position,
+                "location": location,
+                "profile_picture_url": picture_url,
+                "connection_tier": 1,  # Direct connection
+                "updated_at": datetime.utcnow().isoformat()
+            })
+        
+        # Insert or update connections (using upsert to handle duplicates)
+        stored_count = 0
+        for conn in connections_to_insert:
+            try:
+                # Check if connection already exists
+                existing = supabase.table("linkedin_connections").select("id").eq(
+                    "user_profile_id", user_id
+                ).eq("linkedin_profile_id", conn["linkedin_profile_id"]).execute()
+                
+                if existing.data and len(existing.data) > 0:
+                    # Update existing connection
+                    supabase.table("linkedin_connections").update({
+                        "first_name": conn["first_name"],
+                        "last_name": conn["last_name"],
+                        "headline": conn["headline"],
+                        "company_name": conn["company_name"],
+                        "position": conn["position"],
+                        "location": conn["location"],
+                        "profile_picture_url": conn["profile_picture_url"],
+                        "updated_at": conn["updated_at"]
+                    }).eq("id", existing.data[0]["id"]).execute()
+                else:
+                    # Insert new connection
+                    supabase.table("linkedin_connections").insert(conn).execute()
+                
+                stored_count += 1
+            except Exception as e:
+                logger.error(f"Error storing connection {conn.get('linkedin_profile_id')}: {e}")
+                continue
+        
+        logger.info(f"Fetched {len(connections_list)} connections, stored {stored_count} for user {user_id}")
+        
+        return LinkedInConnectionsResponse(
+            success=True,
+            connections_fetched=len(connections_list),
+            connections_stored=stored_count,
+            error=None
+        )
+        
+    except Exception as e:
+        logger.error(f"Error fetching LinkedIn connections: {e}", exc_info=True)
+        return LinkedInConnectionsResponse(
+            success=False,
+            connections_fetched=0,
+            connections_stored=0,
             error=str(e)
         )
 

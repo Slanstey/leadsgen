@@ -41,6 +41,7 @@ const Settings = () => {
   });
   const [linkedinConnecting, setLinkedinConnecting] = useState(false);
   const [linkedinDisconnecting, setLinkedinDisconnecting] = useState(false);
+  const [fetchingConnections, setFetchingConnections] = useState(false);
   const [linkedinProfile, setLinkedinProfile] = useState<{
     profile_id: string | null;
     profile_url: string | null;
@@ -343,6 +344,57 @@ const Settings = () => {
     }
   };
 
+  const handleFetchConnections = async () => {
+    if (!profile?.id) {
+      toast.error("You must be logged in to fetch connections");
+      return;
+    }
+
+    setFetchingConnections(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("You must be logged in to fetch connections");
+        setFetchingConnections(false);
+        return;
+      }
+
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+      
+      const response = await fetch(`${backendUrl}/api/linkedin/fetch-connections`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || 'Unknown error' };
+        }
+        throw new Error(errorData.error || errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.success) {
+        toast.success(`Successfully fetched ${data.connections_fetched} connections and stored ${data.connections_stored} in your database`);
+      } else {
+        toast.error(data.error || "Failed to fetch connections");
+      }
+    } catch (error) {
+      console.error("Error fetching connections:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to fetch LinkedIn connections");
+    } finally {
+      setFetchingConnections(false);
+    }
+  };
+
   const handleDisconnectLinkedIn = async () => {
     if (!profile?.id) {
       toast.error("You must be logged in to disconnect LinkedIn");
@@ -559,9 +611,28 @@ const Settings = () => {
                   </Button>
                 </div>
                 <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                  <p className="text-sm text-blue-900 dark:text-blue-100">
+                  <p className="text-sm text-blue-900 dark:text-blue-100 mb-3">
                     <strong>Connected!</strong> Your LinkedIn account is connected. You can now use your network to find leads and manage warm introductions.
                   </p>
+                  <Button
+                    onClick={handleFetchConnections}
+                    disabled={fetchingConnections}
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                  >
+                    {fetchingConnections ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Fetching Connections...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="h-4 w-4" />
+                        Fetch My LinkedIn Connections
+                      </>
+                    )}
+                  </Button>
                 </div>
               </div>
             ) : (
