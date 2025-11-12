@@ -17,12 +17,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { BarChart3, Settings, Search, Menu, Home, LogOut } from "lucide-react";
+import { BarChart3, Settings, Search, Menu, Home, LogOut, Download } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { ExportDialog } from "@/components/ExportDialog";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -34,6 +35,7 @@ const Index = () => {
   const [showIgnored, setShowIgnored] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   // Fetch leads from database
   const fetchLeads = useCallback(async () => {
@@ -45,11 +47,11 @@ const Index = () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       // Check if Supabase is configured
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      
+
       if (!supabaseUrl || !supabaseKey) {
         throw new Error("Supabase environment variables are not configured. Please check your .env file.");
       }
@@ -130,7 +132,7 @@ const Index = () => {
     try {
       const { error } = await supabase
         .from("leads")
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .update({ status: newStatus as any, updated_at: new Date().toISOString() })
         .eq("id", leadId);
 
       if (error) throw error;
@@ -176,18 +178,18 @@ const Index = () => {
         prevLeads.map((lead) =>
           lead.id === leadId
             ? {
-                ...lead,
-                comments: [
-                  ...lead.comments,
-                  {
-                    id: data.id,
-                    text: data.text,
-                    createdAt: new Date(data.created_at || ""),
-                    author: data.author,
-                  },
-                ],
-                updatedAt: new Date(),
-              }
+              ...lead,
+              comments: [
+                ...lead.comments,
+                {
+                  id: data.id,
+                  text: data.text,
+                  createdAt: new Date(data.created_at || ""),
+                  author: data.author,
+                },
+              ],
+              updatedAt: new Date(),
+            }
             : lead
         )
       );
@@ -210,13 +212,13 @@ const Index = () => {
       if (!leads || leads.length === 0) {
         return [];
       }
-      
+
       return leads.filter((lead) => {
         // Filter out ignored leads by default unless showIgnored is true
         if (lead.status === "ignored" && !showIgnored) {
           return false;
         }
-        
+
         const matchesStatus = statusFilter === "all" || lead.status === statusFilter;
         const matchesCompany = lead.companyName
           .toLowerCase()
@@ -356,6 +358,14 @@ const Index = () => {
               Show ignored leads
             </Label>
           </div>
+          <Button
+            variant="outline"
+            onClick={() => setExportDialogOpen(true)}
+            className="w-full sm:w-auto"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </Button>
         </div>
 
         {loading ? (
@@ -366,8 +376,8 @@ const Index = () => {
           <div className="rounded-lg border border-destructive bg-destructive/10 p-6">
             <h3 className="text-lg font-semibold text-destructive mb-2">Error Loading Leads</h3>
             <p className="text-sm text-muted-foreground mb-4">{error}</p>
-            <Button 
-              onClick={() => window.location.reload()} 
+            <Button
+              onClick={() => window.location.reload()}
               variant="outline"
             >
               Retry
@@ -380,6 +390,13 @@ const Index = () => {
             onAddComment={handleAddComment}
           />
         )}
+
+        <ExportDialog
+          open={exportDialogOpen}
+          onOpenChange={setExportDialogOpen}
+          allLeads={leads}
+          filteredLeads={filteredLeads}
+        />
       </main>
     </div>
   );
