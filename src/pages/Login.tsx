@@ -35,7 +35,7 @@ const Login = () => {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Extract organization name from email domain
+    // Extract email domain
     const emailDomain = email.split('@')[1];
     if (!emailDomain) {
       toast.error("Please enter a valid email address");
@@ -43,6 +43,7 @@ const Login = () => {
     }
 
     // Extract organization name from domain (e.g., "example.com" -> "example")
+    // This is kept for backward compatibility but won't be used for tenant creation
     const organizationName = emailDomain.split('.')[0];
 
     setLoading(true);
@@ -146,7 +147,7 @@ const Login = () => {
                     disabled={loading}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Your organization will be automatically determined from your email domain.
+                    Your account will be created. If your email domain matches an existing tenant, you'll be assigned to that tenant.
                   </p>
                 </div>
                 <div className="space-y-2">

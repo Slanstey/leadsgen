@@ -195,6 +195,7 @@ export type Database = {
       tenants: {
         Row: {
           created_at: string | null
+          domain: string | null
           id: string
           linkedin_experience_operator: string | null
           linkedin_experience_years: number | null
@@ -206,6 +207,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          domain?: string | null
           id?: string
           linkedin_experience_operator?: string | null
           linkedin_experience_years?: number | null
@@ -217,6 +219,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          domain?: string | null
           id?: string
           linkedin_experience_operator?: string | null
           linkedin_experience_years?: number | null

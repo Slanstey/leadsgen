@@ -205,17 +205,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (authError) throw authError;
 
-    // The trigger function will automatically:
-    // 1. Find or create a tenant based on organization name
-    // 2. Create the user_profile with the assigned tenant_id
-    
-    if (authData.user) {
-      // Wait a moment for the trigger to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Fetch the profile to verify it was created with tenant
-      await fetchUserProfile(authData.user.id);
+    if (!authData.user) {
+      throw new Error("User creation failed");
     }
+
+    // Extract email domain to match against tenant domains
+    const emailDomain = email.split('@')[1]?.toLowerCase();
+    
+    // Default tenant ID for new users without matching domain
+    const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+    let tenantId = DEFAULT_TENANT_ID;
+    
+    if (emailDomain) {
+      // Try to find a tenant with matching domain
+      const { data: tenantData, error: tenantError } = await supabase
+        .from("tenants")
+        .select("id")
+        .eq("domain", emailDomain)
+        .maybeSingle();
+      
+      if (!tenantError && tenantData) {
+        tenantId = tenantData.id;
+      }
+    }
+
+    // Manually create user_profile with the assigned tenant_id
+    const { error: profileError } = await supabase
+      .from("user_profiles")
+      .insert({
+        id: authData.user.id,
+        email: email,
+        full_name: fullName,
+        tenant_id: tenantId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+    if (profileError) {
+      // If profile already exists (e.g., from a trigger), try to update it
+      const { error: updateError } = await supabase
+        .from("user_profiles")
+        .update({
+          tenant_id: tenantId,
+          email: email,
+          full_name: fullName,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", authData.user.id);
+
+      if (updateError) {
+        console.error("Error creating/updating user profile:", updateError);
+        throw new Error("Failed to create user profile");
+      }
+    }
+    
+    // Fetch the profile to verify it was created
+    await fetchUserProfile(authData.user.id);
   };
 
   const signOut = async () => {

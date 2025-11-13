@@ -39,7 +39,11 @@ const Index = () => {
 
   // Fetch leads from database
   const fetchLeads = useCallback(async () => {
-    if (!profile?.tenant_id) {
+    const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+    
+    // Don't fetch leads for default tenant users
+    if (!profile?.tenant_id || profile.tenant_id === DEFAULT_TENANT_ID) {
+      setLeads([]);
       setLoading(false);
       return;
     }
@@ -116,15 +120,24 @@ const Index = () => {
   }, [profile?.tenant_id]);
 
   useEffect(() => {
-    if (profile?.tenant_id) {
+    const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+    // Only fetch leads if user has a tenant and it's not the default tenant
+    if (profile?.tenant_id && profile.tenant_id !== DEFAULT_TENANT_ID) {
       fetchLeads();
+    } else {
+      setLeads([]);
+      setLoading(false);
     }
   }, [profile?.tenant_id]); // Only depend on tenant_id, not fetchLeads
 
   // Refetch when navigating back to this page
   useEffect(() => {
-    if (location.pathname === "/" && profile?.tenant_id && !loading) {
+    const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+    if (location.pathname === "/" && profile?.tenant_id && profile.tenant_id !== DEFAULT_TENANT_ID && !loading) {
       fetchLeads();
+    } else if (profile?.tenant_id === DEFAULT_TENANT_ID) {
+      setLeads([]);
+      setLoading(false);
     }
   }, [location.pathname, profile?.tenant_id]); // Remove fetchLeads from dependencies
 
@@ -382,6 +395,13 @@ const Index = () => {
             >
               Retry
             </Button>
+          </div>
+        ) : profile?.tenant_id === 'ffffffff-ffff-ffff-ffff-ffffffffffff' ? (
+          <div className="rounded-lg border bg-muted/50 p-6 text-center">
+            <h3 className="text-lg font-semibold mb-2">No Leads Available</h3>
+            <p className="text-sm text-muted-foreground">
+              You are currently assigned to the default tenant. Leads are only available for users assigned to specific tenant organizations. Please contact your administrator to be assigned to a tenant.
+            </p>
           </div>
         ) : (
           <LeadsTable

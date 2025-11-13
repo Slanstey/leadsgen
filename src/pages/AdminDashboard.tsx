@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Loader2, Sparkles, Users, Building2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ArrowLeft, Loader2, Sparkles, Users, Building2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,6 +27,11 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [generatingLeads, setGeneratingLeads] = useState<Set<string>>(new Set());
+  const [createTenantOpen, setCreateTenantOpen] = useState(false);
+  const [creatingTenant, setCreatingTenant] = useState(false);
+  const [newTenantName, setNewTenantName] = useState("");
+  const [newTenantSlug, setNewTenantSlug] = useState("");
+  const [newTenantDomain, setNewTenantDomain] = useState("");
   const hasLoadedRef = useRef(false);
   const hasRedirectedRef = useRef(false);
 
@@ -56,10 +63,15 @@ const AdminDashboard = () => {
 
     setLoading(true);
     try {
+      // Default tenant ID that should be hidden from dashboard
+      const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+      
       // Fetch tenants directly from Supabase (RLS policy allows admins to read all)
+      // Exclude the default tenant from the dashboard
       const { data: tenantsData, error: tenantsError } = await supabase
         .from("tenants")
         .select("*")
+        .neq("id", DEFAULT_TENANT_ID)
         .order("created_at", { ascending: false });
 
       if (tenantsError) {
@@ -263,6 +275,81 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleCreateTenant = async () => {
+    if (!newTenantName.trim() || !newTenantSlug.trim()) {
+      toast.error("Please fill in tenant name and slug");
+      return;
+    }
+
+    // Validate slug format (lowercase, alphanumeric and hyphens only)
+    const slugRegex = /^[a-z0-9-]+$/;
+    if (!slugRegex.test(newTenantSlug)) {
+      toast.error("Slug must be lowercase and contain only letters, numbers, and hyphens");
+      return;
+    }
+
+    // Validate domain format if provided
+    if (newTenantDomain && !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(newTenantDomain)) {
+      toast.error("Please enter a valid domain (e.g., example.com)");
+      return;
+    }
+
+    setCreatingTenant(true);
+    try {
+      const tenantData: any = {
+        name: newTenantName.trim(),
+        slug: newTenantSlug.trim().toLowerCase(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      // Add domain if provided
+      if (newTenantDomain.trim()) {
+        tenantData.domain = newTenantDomain.trim().toLowerCase();
+      }
+
+      const { data, error } = await supabase
+        .from("tenants")
+        .insert(tenantData)
+        .select()
+        .single();
+
+      if (error) {
+        // Check if it's a unique constraint violation
+        if (error.code === '23505') {
+          toast.error("A tenant with this name or slug already exists");
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      toast.success("Tenant created successfully!");
+      setCreateTenantOpen(false);
+      setNewTenantName("");
+      setNewTenantSlug("");
+      setNewTenantDomain("");
+      // Reload tenants to show the new one
+      loadTenants();
+    } catch (error: any) {
+      console.error("Error creating tenant:", error);
+      toast.error(error.message || "Failed to create tenant");
+    } finally {
+      setCreatingTenant(false);
+    }
+  };
+
+  // Auto-generate slug from name
+  const handleNameChange = (name: string) => {
+    setNewTenantName(name);
+    // Auto-generate slug if slug is empty or matches the previous name-based slug
+    if (!newTenantSlug || newTenantSlug === newTenantName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')) {
+      const autoSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      setNewTenantSlug(autoSlug);
+    }
+  };
+
+
   const leadGenerationMethods = [
     { value: "google_custom_search", label: "Google Custom Search Engine" },
     { value: "google_places_api", label: "Google Places API" },
@@ -283,18 +370,24 @@ const AdminDashboard = () => {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="flex items-center gap-4 mb-6">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/")}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-            <p className="text-muted-foreground">Manage tenants and generate leads</p>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate("/")}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div>
+              <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+              <p className="text-muted-foreground">Manage tenants and generate leads</p>
+            </div>
           </div>
+          <Button onClick={() => setCreateTenantOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Tenant
+          </Button>
         </div>
 
         <div className="grid gap-6">
@@ -377,6 +470,79 @@ const AdminDashboard = () => {
             ))
           )}
         </div>
+
+        <Dialog open={createTenantOpen} onOpenChange={setCreateTenantOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Tenant</DialogTitle>
+              <DialogDescription>
+                Add a new tenant to the system. Users with matching email domains will be automatically assigned to this tenant.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="tenant-name">Tenant Name *</Label>
+                <Input
+                  id="tenant-name"
+                  placeholder="Acme Corporation"
+                  value={newTenantName}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  disabled={creatingTenant}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tenant-slug">Slug *</Label>
+                <Input
+                  id="tenant-slug"
+                  placeholder="acme-corporation"
+                  value={newTenantSlug}
+                  onChange={(e) => setNewTenantSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                  disabled={creatingTenant}
+                />
+                <p className="text-xs text-muted-foreground">
+                  URL-friendly identifier (lowercase, letters, numbers, and hyphens only)
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tenant-domain">Email Domain (Optional)</Label>
+                <Input
+                  id="tenant-domain"
+                  placeholder="acme.com"
+                  value={newTenantDomain}
+                  onChange={(e) => setNewTenantDomain(e.target.value)}
+                  disabled={creatingTenant}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Users signing up with emails from this domain will be automatically assigned to this tenant
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCreateTenantOpen(false);
+                  setNewTenantName("");
+                  setNewTenantSlug("");
+                  setNewTenantDomain("");
+                }}
+                disabled={creatingTenant}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleCreateTenant} disabled={creatingTenant}>
+                {creatingTenant ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Tenant"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

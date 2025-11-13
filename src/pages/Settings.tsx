@@ -158,7 +158,10 @@ const Settings = () => {
           }
         }
 
-        if (!profile?.tenant_id) {
+        const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+        
+        // Don't load preferences for default tenant users
+        if (!profile?.tenant_id || profile.tenant_id === DEFAULT_TENANT_ID) {
           setLoading(false);
           return;
         }
@@ -205,8 +208,10 @@ const Settings = () => {
   }, [profile]);
 
   const handleSave = async () => {
-    if (!profile?.tenant_id) {
-      toast.error("You must be logged in to save settings");
+    const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+    
+    if (!profile?.tenant_id || profile.tenant_id === DEFAULT_TENANT_ID) {
+      toast.error("You cannot save preferences for the default tenant");
       return;
     }
 
@@ -512,14 +517,16 @@ const Settings = () => {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Lead Generation Preferences</CardTitle>
-            <CardDescription>
-              Define your ideal lead criteria to help target the right prospects
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
+        {/* Only show preferences if user is not in default tenant */}
+        {profile?.tenant_id !== 'ffffffff-ffff-ffff-ffff-ffffffffffff' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Lead Generation Preferences</CardTitle>
+              <CardDescription>
+                Define your ideal lead criteria to help target the right prospects
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
             <div className="grid gap-6 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="targetIndustry">Target Industry</Label>
@@ -752,6 +759,7 @@ const Settings = () => {
             </div>
           </CardContent>
         </Card>
+        )}
       </main>
     </div>
   );
