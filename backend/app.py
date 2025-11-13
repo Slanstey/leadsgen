@@ -11,11 +11,16 @@ import urllib.parse
 import requests
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from supabase.lib.client_options import ClientOptions
 from postgrest.exceptions import APIError as PostgrestAPIError
-from postgrest import SyncPostgrestClient
 import logging
 
 from services.linkedin_search import LinkedInSearchService
+from services.google_places_service import GooglePlacesService
+from services.llm_service import LLMService
+from services.google_custom_search_service import GoogleCustomSearchService
+from services.database_service import DatabaseService
+from services.workflow_orchestrator import WorkflowOrchestrator
 
 # Set up logging
 logging.basicConfig(
@@ -68,21 +73,19 @@ if not SUPABASE_ANON_KEY:
         "This is needed for user authentication verification."
     )
 
-# Initialize Supabase client with service role key for database operations
-# Service role key bypasses RLS automatically
-if not SUPABASE_SERVICE_KEY.startswith('eyJ'):
-    logger.warning("WARNING: SUPABASE_SERVICE_ROLE_KEY doesn't look like a service role key (should start with 'eyJ')")
-    logger.warning("Make sure you're using the SERVICE_ROLE key, not the ANON key")
-
 # Service role client for database operations (bypasses RLS)
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+# According to Supabase Python docs: https://supabase.com/docs/reference/python/introduction
+supabase: Client = create_client(
+    SUPABASE_URL,
+    SUPABASE_SERVICE_KEY,
+    ClientOptions(
+        auto_refresh_token=False,
+        persist_session=False,
+    )
+)
 
 # Anon key client for auth operations (validates user sessions properly)
 supabase_auth: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-
-# Log that we're using service role (for debugging)
-logger.info(f"Supabase client initialized with service role key (RLS bypass enabled)")
-logger.info(f"Supabase auth client initialized with anon key for user verification")
 
 # Initialize LinkedIn Search Service
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY_ForSearchLinkedIn")
@@ -95,6 +98,28 @@ if not GOOGLE_CSE_ID:
     raise ValueError("GOOGLE_CSE_ID environment variable is required")
 
 linkedin_search_service = LinkedInSearchService(GOOGLE_API_KEY, GOOGLE_CSE_ID)
+
+# Initialize Google Places API Service
+GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
+google_places_service = GooglePlacesService(GOOGLE_PLACES_API_KEY) if GOOGLE_PLACES_API_KEY else None
+
+# Initialize LLM Service
+llm_service = LLMService()
+
+# Initialize Google Custom Search Service (general purpose)
+google_custom_search_service = GoogleCustomSearchService(GOOGLE_API_KEY, GOOGLE_CSE_ID)
+
+# Initialize Database Service
+database_service = DatabaseService(supabase)
+
+# Initialize Workflow Orchestrator
+workflow_orchestrator = WorkflowOrchestrator(
+    google_places_service=google_places_service,
+    llm_service=llm_service,
+    google_custom_search_service=google_custom_search_service,
+    linkedin_search_service=linkedin_search_service,
+    database_service=database_service
+)
 
 # LinkedIn OAuth Configuration
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
@@ -537,9 +562,8 @@ async def get_preferences(
     """Get tenant preferences"""
     
     try:
-        # Use service role client to bypass RLS
-        service_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-        result = service_client.table("tenant_preferences").select("*").eq("tenant_id", user_info["tenant_id"]).execute()
+        # Use service role client to bypass RLS (already initialized at module level)
+        result = supabase.table("tenant_preferences").select("*").eq("tenant_id", user_info["tenant_id"]).execute()
         
         if result.data and len(result.data) > 0:
             return GetPreferencesResponse(
@@ -614,40 +638,27 @@ async def save_preferences(
         if request.funding_stage is not None:
             update_data["funding_stage"] = request.funding_stage
         
-        # Check if preferences record exists
-        # Use PostgREST client directly with service role key to ensure RLS bypass
-        # The service role key MUST be sent as both apikey header and Authorization Bearer token
-        postgrest_client = SyncPostgrestClient(
-            base_url=f"{SUPABASE_URL}/rest/v1",
-            schema="public",
-            headers={
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"
-            }
-        )
-        
+        # Check if preferences record exists using Supabase client
         # Verify we're using service role by checking the key format
         if not SUPABASE_SERVICE_KEY.startswith('eyJ'):
             logger.error("CRITICAL: Service role key format is incorrect! It should start with 'eyJ'")
             raise HTTPException(status_code=500, detail="Service role key configuration error")
         
         # Check if preferences exist
-        existing_response = postgrest_client.from_("tenant_preferences").select("id").eq("tenant_id", request.tenant_id).execute()
-        existing_data = existing_response.data if hasattr(existing_response, 'data') else []
+        existing_result = supabase.table("tenant_preferences").select("id").eq("tenant_id", request.tenant_id).execute()
+        existing_data = existing_result.data if existing_result.data else []
         
         if existing_data and len(existing_data) > 0:
             # Update existing preferences
             # Service role key bypasses RLS automatically
-            result_response = postgrest_client.from_("tenant_preferences").update(update_data).eq("tenant_id", request.tenant_id).execute()
-            result = result_response.data if hasattr(result_response, 'data') else []
+            result = supabase.table("tenant_preferences").update(update_data).eq("tenant_id", request.tenant_id).execute()
         else:
             # Insert new preferences
             # Service role key bypasses RLS automatically
             update_data["tenant_id"] = request.tenant_id
             logger.info(f"Attempting to insert preferences for tenant_id: {request.tenant_id}")
-            result_response = postgrest_client.from_("tenant_preferences").insert(update_data).execute()
-            result = result_response.data if hasattr(result_response, 'data') else []
-            logger.info(f"Insert result: {result}")
+            result = supabase.table("tenant_preferences").insert(update_data).execute()
+            logger.info(f"Insert result: {result.data if result.data else 'No data returned'}")
         
         if not result:
             raise HTTPException(status_code=500, detail="Failed to save preferences")
@@ -763,16 +774,16 @@ async def generate_leads(
     request: GenerateLeadsRequest,
     user_info: Dict[str, Any] = Depends(verify_admin)
 ):
-    """Generate leads for a tenant based on their preferences and method"""
+    """Generate leads for a tenant based on their preferences and method using agentic workflow"""
     try:
-        # Get tenant preferences
+        # Get tenant preferences using Supabase client
         prefs_result = supabase.table("tenant_preferences").select("*").eq("tenant_id", request.tenant_id).execute()
         
         if not prefs_result.data or len(prefs_result.data) == 0:
             return GenerateLeadsResponse(
                 success=False,
                 leads_created=0,
-                error="Tenant preferences not found. Please configure preferences first."
+                error=f"Tenant preferences not found for tenant {request.tenant_id}. Please configure preferences first in Settings, or ensure lead generation methods are selected in the Admin Dashboard."
             )
         
         preferences = prefs_result.data[0]
@@ -782,85 +793,28 @@ async def generate_leads(
             return GenerateLeadsResponse(
                 success=False,
                 leads_created=0,
-                error="Lead generation methods not set for this tenant. Please select at least one method first."
+                error="Lead generation methods not set for this tenant. Please select at least one method in the Admin Dashboard first."
             )
         
-        leads_created = 0
-        errors = []
+        # Use workflow orchestrator to generate leads
         
-        # Generate leads for each selected method
-        for lead_generation_method in lead_generation_methods:
-            try:
-                # Generate leads based on method
-                if lead_generation_method == "linkedin_search":
-                    # Use consolidated fields for LinkedIn search
-                    locations_str = preferences.get("locations") or preferences.get("linkedin_locations") or preferences.get("geographic_region")
-                    positions_str = preferences.get("target_positions") or preferences.get("linkedin_positions") or preferences.get("target_roles")
-                    
-                    if not locations_str or not positions_str:
-                        errors.append("Locations and target positions must be configured for LinkedIn search.")
-                        continue
-                    
-                    # Parse locations and positions (comma-separated)
-                    locations = [loc.strip() for loc in locations_str.split(",") if loc.strip()]
-                    positions = [pos.strip() for pos in positions_str.split(",") if pos.strip()]
-                    
-                    if not locations or not positions:
-                        errors.append("Invalid locations or positions format.")
-                        continue
-                    
-                    experience_operator = preferences.get("experience_operator") or preferences.get("linkedin_experience_operator", "=")
-                    experience_years = preferences.get("experience_years") or preferences.get("linkedin_experience_years", 0)
-                    
-                    # Search LinkedIn profiles
-                    profiles = linkedin_search_service.search_profiles(
-                        locations=locations,
-                        positions=positions,
-                        experience_operator=experience_operator,
-                        experience_years=experience_years,
-                        limit=50  # Generate up to 50 leads
-                    )
-                    
-                    # Prepare leads for insertion
-                    leads_to_insert = []
-                    for profile in profiles:
-                        leads_to_insert.append({
-                            "tenant_id": request.tenant_id,
-                            "contact_person": profile["name"],
-                            "company_name": profile["company"],
-                            "role": profile["role"],
-                            "contact_email": "",
-                            "status": "not_contacted",
-                        })
-                    
-                    # Insert leads into Supabase
-                    if leads_to_insert:
-                        result = supabase.table("leads").insert(leads_to_insert).execute()
-                        leads_created += len(result.data) if result.data else 0
-                
-                elif lead_generation_method in ["google_custom_search", "google_places_api", "pure_llm", "agentic_workflow", "linkedin_sales_navigator"]:
-                    # Placeholder for other methods - log error but continue with other methods
-                    errors.append(f"Lead generation method '{lead_generation_method}' is not yet implemented.")
-                else:
-                    errors.append(f"Unknown lead generation method: {lead_generation_method}")
-            except Exception as e:
-                logger.error(f"Error generating leads with method {lead_generation_method}: {str(e)}")
-                errors.append(f"Error with {lead_generation_method}: {str(e)}")
+        result = workflow_orchestrator.generate_leads(
+            methods=lead_generation_methods,
+            preferences=preferences,  # Pass full preferences JSON object
+            tenant_id=request.tenant_id,
+            max_results_per_method=50
+        )
         
-        # Return response with any errors
-        if leads_created > 0:
-            error_msg = "; ".join(errors) if errors else None
-            return GenerateLeadsResponse(
-                success=True,
-                leads_created=leads_created,
-                error=error_msg
-            )
-        else:
-            return GenerateLeadsResponse(
-                success=False,
-                leads_created=0,
-                error="; ".join(errors) if errors else "Failed to generate leads with any selected method."
-            )
+        # Build error message if any
+        error_msg = None
+        if result.get("errors"):
+            error_msg = "; ".join(result["errors"])
+        
+        return GenerateLeadsResponse(
+            success=result["success"],
+            leads_created=result["leads_created"],
+            error=error_msg
+        )
         
     except Exception as e:
         logger.error(f"Error generating leads: {e}", exc_info=True)

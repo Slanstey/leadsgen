@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,30 +24,29 @@ const AdminDashboard = () => {
   const { profile, session } = useAuth();
   const [loading, setLoading] = useState(true);
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [updatingMethods, setUpdatingMethods] = useState<Set<string>>(new Set());
   const [generatingLeads, setGeneratingLeads] = useState<Set<string>>(new Set());
+  const hasLoadedRef = useRef(false);
+  const hasRedirectedRef = useRef(false);
 
   const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
   useEffect(() => {
     // Check if user is admin
     if (profile && !(profile as any).is_admin) {
-      toast.error("Access denied. Admin privileges required.");
-      navigate("/");
+      if (!hasRedirectedRef.current) {
+        hasRedirectedRef.current = true;
+        toast.error("Access denied. Admin privileges required.");
+        navigate("/");
+      }
       return;
     }
 
-    if (profile && (profile as any).is_admin && session) {
+    if (profile && (profile as any).is_admin && session && !hasLoadedRef.current) {
       console.log("Admin user detected, loading tenants...");
+      hasLoadedRef.current = true;
       loadTenants();
-    } else {
-      console.log("Waiting for admin profile or session:", { 
-        hasProfile: !!profile, 
-        isAdmin: (profile as any)?.is_admin,
-        hasSession: !!session 
-      });
     }
-  }, [profile, session, navigate]);
+  }, [profile, session]);
 
   const loadTenants = async () => {
     if (!session) {
@@ -92,12 +91,16 @@ const AdminDashboard = () => {
 
           const lead_count = leadsError ? 0 : (leadsData?.length || 0);
 
-          // Get lead generation methods (array)
-          const { data: prefsData } = await supabase
+          // Get lead generation methods (array) - use maybeSingle to avoid error if none exist
+          const { data: prefsData, error: prefsError } = await supabase
             .from("tenant_preferences")
             .select("lead_generation_method")
             .eq("tenant_id", tenant.id)
-            .single();
+            .maybeSingle();
+          
+          if (prefsError && prefsError.code !== 'PGRST116') {
+            console.error(`Error fetching preferences for tenant ${tenant.id}:`, prefsError);
+          }
 
           return {
             id: tenant.id,
@@ -126,30 +129,40 @@ const AdminDashboard = () => {
       return;
     }
 
-    setUpdatingMethods(prev => new Set(prev).add(tenantId));
-    try {
-      // Get current methods
-      const tenant = tenants.find(t => t.id === tenantId);
-      const currentMethods = tenant?.lead_generation_method || [];
-      
-      // Update methods array
-      let newMethods: string[];
-      if (checked) {
-        // Add method if not already present
-        newMethods = currentMethods.includes(method) 
-          ? currentMethods 
-          : [...currentMethods, method];
-      } else {
-        // Remove method
-        newMethods = currentMethods.filter(m => m !== method);
-      }
+    // Get current methods
+    const tenant = tenants.find(t => t.id === tenantId);
+    const currentMethods = tenant?.lead_generation_method || [];
+    
+    // Update methods array
+    let newMethods: string[];
+    if (checked) {
+      // Add method if not already present
+      newMethods = currentMethods.includes(method) 
+        ? currentMethods 
+        : [...currentMethods, method];
+    } else {
+      // Remove method
+      newMethods = currentMethods.filter(m => m !== method);
+    }
 
-      // Check if preferences exist
-      const { data: existingPrefs } = await supabase
+    // Update local state immediately (optimistic update)
+    setTenants(prev => prev.map(t => 
+      t.id === tenantId ? { ...t, lead_generation_method: newMethods } : t
+    ));
+
+    // Update database in background
+    try {
+      // Check if preferences exist (use maybeSingle to avoid error if none exist)
+      const { data: existingPrefs, error: checkError } = await supabase
         .from("tenant_preferences")
         .select("id")
         .eq("tenant_id", tenantId)
-        .single();
+        .maybeSingle();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        // PGRST116 means no rows found, which is fine
+        throw checkError;
+      }
 
       if (existingPrefs) {
         // Update existing preferences
@@ -172,22 +185,18 @@ const AdminDashboard = () => {
             updated_at: new Date().toISOString()
           });
 
-        if (error) throw error;
+        if (error) {
+          console.error("Error creating preferences:", error);
+          throw error;
+        }
       }
-
-      // Update local state
-      setTenants(prev => prev.map(t => 
-        t.id === tenantId ? { ...t, lead_generation_method: newMethods } : t
-      ));
     } catch (error: any) {
       console.error("Error updating method:", error);
+      // Revert optimistic update on error
+      setTenants(prev => prev.map(t => 
+        t.id === tenantId ? { ...t, lead_generation_method: currentMethods } : t
+      ));
       toast.error(error.message || "Failed to update lead generation method");
-    } finally {
-      setUpdatingMethods(prev => {
-        const next = new Set(prev);
-        next.delete(tenantId);
-        return next;
-      });
     }
   };
 
@@ -197,17 +206,30 @@ const AdminDashboard = () => {
       return;
     }
 
+    // Log the request details
+    console.log("=== Generate Leads Request ===");
+    console.log("Tenant ID:", tenantId);
+    console.log("Tenant ID type:", typeof tenantId);
+    
+    // Get the methods from the tenant object to log them
+    const tenant = tenants.find(t => t.id === tenantId);
+    console.log("Lead generation methods from frontend state:", tenant?.lead_generation_method);
+    console.log("=================================");
+
     setGeneratingLeads(prev => new Set(prev).add(tenantId));
     try {
+      const requestBody = {
+        tenant_id: tenantId,
+      };
+      console.log("Request body:", requestBody);
+      
       const response = await fetch(`${backendUrl}/api/admin/generate-leads`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({
-          tenant_id: tenantId,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -317,7 +339,6 @@ const AdminDashboard = () => {
                                 onCheckedChange={(checked) => {
                                   handleMethodChange(tenant.id, method.value, checked === true);
                                 }}
-                                disabled={updatingMethods.has(tenant.id)}
                               />
                               <Label 
                                 htmlFor={`${tenant.id}-${method.value}`} 
@@ -329,12 +350,6 @@ const AdminDashboard = () => {
                           );
                         })}
                       </div>
-                      {updatingMethods.has(tenant.id) && (
-                        <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Updating...
-                        </div>
-                      )}
                     </div>
                     <Button
                       onClick={(e) => {

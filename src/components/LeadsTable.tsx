@@ -37,6 +37,12 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
+  const isNewLead = (lead: Lead): boolean => {
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    return lead.createdAt >= threeDaysAgo;
+  };
+
   const handleAddComment = (leadId: string) => {
     if (commentText.trim()) {
       onAddComment(leadId, commentText);
@@ -80,7 +86,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
         <TableBody>
           {leads.map((lead) => (
             <Fragment key={lead.id}>
-              <TableRow>
+              <TableRow className={isNewLead(lead) ? "border-l-4 border-l-green-500" : ""}>
                 <TableCell>
                   <button
                     onClick={() => handleCompanyClick(lead.companyName)}

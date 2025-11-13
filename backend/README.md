@@ -38,6 +38,8 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_secret_key
 SUPABASE_ANON_KEY=your_supabase_anon_key
 GOOGLE_API_KEY_ForSearchLinkedIn=your_google_api_key
 GOOGLE_CSE_ID=your_google_cse_id
+GOOGLE_PLACES_API_KEY=your_google_places_api_key (optional, for Google Places API)
+OPENAI_API_KEY=your_openai_api_key (optional, for Pure LLM generation)
 LINKEDIN_CLIENT_ID=your_linkedin_client_id
 LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret
 ```
@@ -58,6 +60,13 @@ LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret
   - Get it from: [Google Custom Search Engine Control Panel](https://programmablesearchengine.google.com/controlpanel)
   - Format: `numbers:letters` (e.g., `017576662512468239146:omuauf_lfve`)
   - Make sure your CSE is configured to search `linkedin.com/in`
+- `GOOGLE_PLACES_API_KEY`: (Optional) Your Google Places API key
+  - Get it from: [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+  - Required for Google Places API lead generation method
+  - Enable the Places API in your Google Cloud project
+- `OPENAI_API_KEY`: (Optional) Your OpenAI API key
+  - Get it from: [OpenAI Platform](https://platform.openai.com/api-keys)
+  - Required for Pure LLM lead generation method
 - `LINKEDIN_CLIENT_ID`: Your LinkedIn OAuth Client ID
   - Get it from: [LinkedIn Developers](https://www.linkedin.com/developers/apps)
   - Create a new app and get the Client ID
@@ -88,7 +97,53 @@ Or with uvicorn directly:
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
+## Architecture
+
+The backend uses a modular, agentic workflow architecture:
+
+- **Services**: Individual lead generation services (Google Places, LLM, Custom Search, LinkedIn)
+- **Workflow Orchestrator**: Coordinates multiple services based on selected methods
+- **Database Service**: Handles saving leads and companies to Supabase
+
+### Lead Generation Methods
+
+1. **google_places_api**: Searches for businesses using Google Places API
+2. **pure_llm**: Generates leads using AI/LLM based on preferences
+3. **google_custom_search**: General web search using Google Custom Search API
+4. **linkedin_search**: Searches LinkedIn profiles (existing functionality)
+
 ## API Endpoints
+
+### POST /api/admin/generate-leads
+Generate leads for a tenant using agentic workflow with multiple methods.
+
+**Request Body:**
+```json
+{
+  "tenant_id": "tenant-uuid"
+}
+```
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "leads_created": 25,
+  "error": null
+}
+```
+
+The endpoint automatically:
+- Reads tenant preferences from database
+- Uses selected lead generation methods
+- Orchestrates multiple services in parallel
+- Deduplicates results
+- Saves leads and companies to database
 
 ### POST /api/search-linkedin
 Search LinkedIn profiles and save to leads table.
