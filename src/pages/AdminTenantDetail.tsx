@@ -3,10 +3,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Loader2, User, Mail, Calendar, Building2 } from "lucide-react";
+import { ArrowLeft, Loader2, User, Mail, Calendar, Building2, Eye, Download } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { LeadsTable } from "@/components/LeadsTable";
+import { ExportDialog } from "@/components/ExportDialog";
+import { Lead, LeadStatus } from "@/types/lead";
 
 interface TenantDetail {
   tenant: {
@@ -15,6 +18,7 @@ interface TenantDetail {
     slug: string;
     created_at: string;
     updated_at: string;
+    admin_notes: string | null;
   };
   preferences: {
     [key: string]: any;
@@ -34,6 +38,10 @@ const AdminTenantDetail = () => {
   const { profile, session } = useAuth();
   const [loading, setLoading] = useState(true);
   const [tenantDetail, setTenantDetail] = useState<TenantDetail | null>(null);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [loadingLeads, setLoadingLeads] = useState(false);
+  const [showLeads, setShowLeads] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   useEffect(() => {
     // Check if user is admin
@@ -137,6 +145,151 @@ const AdminTenantDetail = () => {
       month: 'long',
       day: 'numeric',
     });
+  };
+
+  const fetchLeads = async () => {
+    if (!session || !tenantId) {
+      toast.error("You must be logged in");
+      return;
+    }
+
+    setLoadingLeads(true);
+    try {
+      // Fetch leads for this tenant
+      const { data: leadsData, error: leadsError } = await supabase
+        .from("leads")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false });
+
+      if (leadsError) {
+        throw new Error(`Failed to fetch leads: ${leadsError.message}`);
+      }
+
+      // Fetch comments for this tenant's leads
+      const { data: commentsData, error: commentsError } = await supabase
+        .from("comments")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: true });
+
+      if (commentsError) {
+        console.error("Comments fetch error:", commentsError);
+        // Don't throw, just log - leads can still be displayed without comments
+      }
+
+      // Combine leads with their comments
+      const leadsWithComments: Lead[] = (leadsData || []).map((lead) => {
+        const leadComments = (commentsData || [])
+          .filter((comment) => comment.lead_id === lead.id)
+          .map((comment) => ({
+            id: comment.id,
+            text: comment.text,
+            author: comment.author,
+            createdAt: new Date(comment.created_at || ""),
+          }));
+
+        return {
+          id: lead.id,
+          companyName: lead.company_name,
+          contactPerson: lead.contact_person,
+          contactEmail: lead.contact_email,
+          role: lead.role,
+          status: lead.status as LeadStatus,
+          tier: lead.tier || 1,
+          comments: leadComments,
+          createdAt: new Date(lead.created_at || ""),
+          updatedAt: new Date(lead.updated_at || ""),
+        };
+      });
+
+      setLeads(leadsWithComments);
+      setShowLeads(true);
+    } catch (error: any) {
+      console.error("Error loading leads:", error);
+      toast.error(error.message || "Failed to load leads");
+    } finally {
+      setLoadingLeads(false);
+    }
+  };
+
+  const handleStatusChange = async (leadId: string, newStatus: LeadStatus) => {
+    try {
+      const { error } = await supabase
+        .from("leads")
+        .update({ status: newStatus as any, updated_at: new Date().toISOString() })
+        .eq("id", leadId);
+
+      if (error) throw error;
+
+      // Update local state
+      setLeads((prevLeads) =>
+        prevLeads.map((lead) =>
+          lead.id === leadId
+            ? { ...lead, status: newStatus, updatedAt: new Date() }
+            : lead
+        )
+      );
+
+      toast.success("Status updated successfully");
+    } catch (error) {
+      console.error("Error updating status:", error);
+      toast.error("Failed to update status");
+    }
+  };
+
+  const handleAddComment = async (leadId: string, commentText: string) => {
+    if (!profile || !tenantId) {
+      toast.error("Unable to add comment: tenant not found");
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("comments")
+        .insert({
+          lead_id: leadId,
+          text: commentText,
+          author: profile.full_name || profile.email || "Admin",
+          tenant_id: tenantId,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update local state
+      setLeads((prevLeads) =>
+        prevLeads.map((lead) =>
+          lead.id === leadId
+            ? {
+                ...lead,
+                comments: [
+                  ...lead.comments,
+                  {
+                    id: data.id,
+                    text: data.text,
+                    createdAt: new Date(data.created_at || ""),
+                    author: data.author,
+                  },
+                ],
+                updatedAt: new Date(),
+              }
+            : lead
+        )
+      );
+
+      // Update lead's updated_at timestamp
+      await supabase
+        .from("leads")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", leadId);
+
+      toast.success("Comment added successfully");
+    } catch (error) {
+      console.error("Error adding comment:", error);
+      toast.error("Failed to add comment");
+    }
   };
 
   return (
@@ -266,7 +419,76 @@ const AdminTenantDetail = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Leads Section */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Leads</CardTitle>
+                  <CardDescription>View and manage leads for this tenant</CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  {showLeads && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setExportDialogOpen(true)}
+                      disabled={leads.length === 0}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export
+                    </Button>
+                  )}
+                  <Button
+                    onClick={fetchLeads}
+                    disabled={loadingLeads}
+                    variant={showLeads ? "outline" : "default"}
+                  >
+                    {loadingLeads ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-4 w-4 mr-2" />
+                        {showLeads ? "Refresh Leads" : "View Leads"}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {!showLeads ? (
+                <p className="text-muted-foreground text-center py-4">
+                  Click "View Leads" to load leads for this tenant
+                </p>
+              ) : loadingLeads ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : leads.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">
+                  No leads found for this tenant
+                </p>
+              ) : (
+                <LeadsTable
+                  leads={leads}
+                  onStatusChange={handleStatusChange}
+                  onAddComment={handleAddComment}
+                />
+              )}
+            </CardContent>
+          </Card>
         </div>
+
+        <ExportDialog
+          open={exportDialogOpen}
+          onOpenChange={setExportDialogOpen}
+          allLeads={leads}
+          filteredLeads={leads}
+        />
       </div>
     </div>
   );

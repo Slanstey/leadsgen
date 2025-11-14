@@ -46,7 +46,9 @@ class WorkflowOrchestrator:
         methods: List[str],
         preferences: Dict[str, Any],
         tenant_id: str,
-        max_results_per_method: int = 20
+        max_results_per_method: int = 20,
+        tenant_name: Optional[str] = None,
+        admin_notes: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Generate leads using specified methods and preferences
@@ -56,6 +58,8 @@ class WorkflowOrchestrator:
             preferences: Tenant preferences dictionary
             tenant_id: Tenant ID
             max_results_per_method: Maximum results per method
+            tenant_name: Name of the tenant/company
+            admin_notes: Additional notes from admin dashboard
             
         Returns:
             Dictionary with results summary
@@ -76,7 +80,14 @@ class WorkflowOrchestrator:
         for method in methods:
             try:
                 logger.info(f"Processing method: {method}")
-                leads = self._process_method(method, preferences, search_query, max_results_per_method)
+                leads = self._process_method(
+                    method, 
+                    preferences, 
+                    search_query, 
+                    max_results_per_method,
+                    tenant_name=tenant_name,
+                    admin_notes=admin_notes
+                )
                 
                 if leads:
                     all_leads.extend(leads)
@@ -124,7 +135,9 @@ class WorkflowOrchestrator:
         method: str,
         preferences: Dict[str, Any],
         search_query: str,
-        max_results: int
+        max_results: int,
+        tenant_name: Optional[str] = None,
+        admin_notes: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Process a single lead generation method"""
         leads = []
@@ -177,7 +190,9 @@ class WorkflowOrchestrator:
             
             llm_leads = self.llm_service.generate_leads(
                 preferences=preferences,
-                max_results=max_results
+                max_results=max_results,
+                tenant_name=tenant_name,
+                admin_notes=admin_notes
             )
             leads.extend(llm_leads)
         

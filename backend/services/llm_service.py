@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class LLMService:
     """Service for generating leads using LLM"""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-5-mini-2025-08-07"):
         """
         Initialize the LLM service
         
@@ -24,12 +24,19 @@ class LLMService:
         """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
-        self.base_url = "https://api.openai.com/v1/chat/completions"
+        # Use responses API instead of completions API
+        self.base_url = "https://api.openai.com/v1/responses"
+        # Model for system prompt generation (use GPT-4o mini)
+        self.system_prompt_model = "gpt-4o-mini"
+        # Use completions API for system prompt generation (simpler, no web search needed)
+        self.completions_url = "https://api.openai.com/v1/chat/completions"
     
     def generate_leads(
         self,
         preferences: Dict[str, Any],
-        max_results: int = 20
+        max_results: int = 5,
+        tenant_name: Optional[str] = None,
+        admin_notes: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Generate leads using LLM based on preferences
@@ -37,6 +44,8 @@ class LLMService:
         Args:
             preferences: Tenant preferences dictionary
             max_results: Maximum number of leads to generate
+            tenant_name: Name of the tenant/company generating leads
+            admin_notes: Additional notes from admin dashboard
             
         Returns:
             List of lead dictionaries
@@ -46,44 +55,94 @@ class LLMService:
             return []
         
         try:
-            # Build prompt from preferences
+            # Step 1: Generate a system prompt using GPT-5 nano
+            system_prompt = self._generate_system_prompt(
+                preferences=preferences,
+                tenant_name=tenant_name,
+                admin_notes=admin_notes
+            )
+            
+            if not system_prompt:
+                logger.warning("Failed to generate system prompt, using default")
+                system_prompt = "You are a lead generation assistant. Generate realistic business leads based on the provided criteria. Return results as a JSON array."
+            
+            # Step 2: Build prompt from preferences
             prompt = self._build_prompt(preferences, max_results)
             
-            # Call OpenAI API
+            logger.info(f"Lead generation - System prompt: {system_prompt}")
+            logger.info(f"Lead generation - User prompt: {prompt}")
+            
+            # Call OpenAI Responses API with the generated system prompt (supports web search)
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
             
-            payload = {
+            # Use responses API format for lead generation (supports web search)
+            responses_payload = {
                 "model": self.model,
-                "messages": [
+                "input": [
                     {
                         "role": "system",
-                        "content": "You are a lead generation assistant. Generate realistic business leads based on the provided criteria. Return results as a JSON array."
+                        "content": system_prompt
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
                 ],
-                "temperature": 0.7,
-                "max_tokens": 2000
+                "max_output_tokens": 2500,
+                "store": False
             }
+            
+            logger.info(f"Lead generation - Request payload (responses API): {json.dumps(responses_payload, indent=2)}")
             
             response = requests.post(
                 self.base_url,
-                json=payload,
+                json=responses_payload,
                 headers=headers,
-                timeout=30
+                timeout=180  # Increased timeout for web search
             )
+            
+            logger.info(f"Lead generation API response status: {response.status_code}")
+            logger.info(f"Lead generation API response body: {response.text}")
             
             if response.status_code != 200:
                 logger.error(f"OpenAI API error: {response.status_code} - {response.text}")
                 return []
             
             data = response.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            logger.info(f"Lead generation parsed JSON: {json.dumps(data, indent=2)}")
+            
+            # Check response structure for responses API
+            content = None
+            if "output" in data:
+                # Responses API format - find the message type output
+                if isinstance(data["output"], list):
+                    for output_item in data["output"]:
+                        if output_item.get("type") == "message" and "content" in output_item:
+                            # Find the output_text content item
+                            content_list = output_item.get("content", [])
+                            if isinstance(content_list, list):
+                                for content_item in content_list:
+                                    if content_item.get("type") == "output_text" and "text" in content_item:
+                                        content = content_item["text"]
+                                        break
+                            if content:
+                                break
+            elif "choices" in data and len(data["choices"]) > 0:
+                # Fallback to completions format
+                choice = data["choices"][0]
+                if "message" in choice:
+                    content = choice["message"].get("content", "")
+                elif "content" in choice:
+                    content = choice.get("content", "")
+            
+            if not content:
+                logger.error(f"Could not extract content from response. Response structure: {json.dumps(data, indent=2)}")
+                return []
+            
+            logger.info(f"Extracted content (length: {len(content)}): {content[:500]}...")
             
             # Parse JSON response
             leads = self._parse_llm_response(content)
@@ -99,6 +158,131 @@ class LLMService:
         except Exception as e:
             logger.error(f"Unexpected error in LLM service: {e}")
             return []
+    
+    def _generate_system_prompt(
+        self,
+        preferences: Dict[str, Any],
+        tenant_name: Optional[str] = None,
+        admin_notes: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Generate a system prompt using GPT-5 nano based on company details and admin notes
+        
+        Args:
+            preferences: Tenant preferences dictionary
+            tenant_name: Name of the tenant/company
+            admin_notes: Additional notes from admin dashboard
+            
+        Returns:
+            Generated system prompt or None if generation fails
+        """
+        try:
+            # Build user prompt for system prompt generation - only include main company details and admin notes
+            user_prompt_parts = []
+            
+            if tenant_name:
+                user_prompt_parts.append(f"Company name: {tenant_name}")
+            
+            if admin_notes:
+                user_prompt_parts.append(f"\nAdditional requirements and context:\n{admin_notes}")
+            
+            # Add context about what we're creating
+            user_prompt_parts.append("\nYou are creating a system prompt for a lead generation AI assistant. This system prompt will be used to guide the assistant in generating business leads.")
+            
+            user_prompt = "\n".join(user_prompt_parts) if user_prompt_parts else "Create a system prompt for a lead generation AI assistant."
+            
+            # Hardcoded system prompt for GPT-4o mini
+            system_prompt_for_generation = """You are a prompt engineering assistant. Your task is to create a detailed, specific system prompt for a lead generation AI assistant.
+
+Based on the company name and additional requirements provided, create a comprehensive system prompt that will guide the lead generation assistant to find the most relevant and high-quality leads.
+
+The system prompt should:
+1. Clearly define the type of leads to generate
+2. Include specific criteria and requirements based on the company's needs
+3. Emphasize quality and relevance
+4. Be specific about what to include and exclude
+5. Guide the assistant to generate realistic, useful leads
+
+IMPORTANT: Do not reason internally or explain your thought process. Focus on writing the final text directly. Return the full system prompt text immediately, without any additional reasoning, reflection, or hidden steps. Begin your answer directly with the system prompt content.
+
+Return ONLY the system prompt text, without any additional explanation or formatting."""
+            
+            logger.info(f"System prompt generation - System prompt: {system_prompt_for_generation}")
+            logger.info(f"System prompt generation - User prompt: {user_prompt}")
+            
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": self.system_prompt_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": system_prompt_for_generation
+                    },
+                    {
+                        "role": "user",
+                        "content": user_prompt
+                    }
+                ],
+                "max_completion_tokens": 1500
+            }
+            
+            logger.info(f"System prompt generation - Request payload: {json.dumps(payload, indent=2)}")
+            
+            # Use completions API for system prompt generation (simpler, no web search needed)
+            response = requests.post(
+                self.completions_url,
+                json=payload,
+                headers=headers,
+                timeout=30
+            )
+            
+            logger.info(f"System prompt generation API response status: {response.status_code}")
+            logger.info(f"System prompt generation API response body: {response.text}")
+            
+            if response.status_code != 200:
+                logger.error(f"OpenAI API error generating system prompt: {response.status_code} - {response.text}")
+                return None
+            
+            data = response.json()
+            logger.info(f"System prompt generation parsed JSON: {json.dumps(data, indent=2)}")
+            
+            # Check response structure - GPT-5 models might use different response format
+            content = None
+            if "choices" in data and len(data["choices"]) > 0:
+                choice = data["choices"][0]
+                if "message" in choice:
+                    content = choice["message"].get("content", "")
+                elif "content" in choice:
+                    content = choice.get("content", "")
+            
+            if not content:
+                logger.warning(f"Could not extract content from response. Response structure: {data}")
+                return None
+            
+            generated_prompt = content.strip()
+            
+            logger.info(f"Generated system prompt (length: {len(generated_prompt)}): {generated_prompt[:200]}...")
+            
+            if generated_prompt:
+                logger.info("Successfully generated system prompt for lead generation")
+                return generated_prompt
+            else:
+                logger.warning("Empty system prompt generated")
+                return None
+                
+        except requests.exceptions.Timeout:
+            logger.warning("Timeout calling LLM API for system prompt generation")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error calling LLM API for system prompt generation: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error generating system prompt: {e}")
+            return None
     
     def _build_prompt(self, preferences: Dict[str, Any], max_results: int) -> str:
         """Build comprehensive prompt for LLM based on all preference fields"""

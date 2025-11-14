@@ -776,6 +776,15 @@ async def generate_leads(
 ):
     """Generate leads for a tenant based on their preferences and method using agentic workflow"""
     try:
+        # Get tenant information (name and admin_notes)
+        tenant_result = supabase.table("tenants").select("name, admin_notes").eq("id", request.tenant_id).execute()
+        
+        tenant_name = None
+        admin_notes = None
+        if tenant_result.data and len(tenant_result.data) > 0:
+            tenant_name = tenant_result.data[0].get("name")
+            admin_notes = tenant_result.data[0].get("admin_notes")
+        
         # Get tenant preferences using Supabase client
         prefs_result = supabase.table("tenant_preferences").select("*").eq("tenant_id", request.tenant_id).execute()
         
@@ -802,7 +811,9 @@ async def generate_leads(
             methods=lead_generation_methods,
             preferences=preferences,  # Pass full preferences JSON object
             tenant_id=request.tenant_id,
-            max_results_per_method=50
+            max_results_per_method=5,  # Generate 5 leads per method
+            tenant_name=tenant_name,
+            admin_notes=admin_notes
         )
         
         # Build error message if any
