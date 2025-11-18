@@ -5,12 +5,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Loader2, Sparkles, Users, Building2, Plus, Save } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, Users, Building2, Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { CsvUploadDialog } from "@/components/CsvUploadDialog";
 
 interface Tenant {
   id: string;
@@ -29,13 +29,12 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [generatingLeads, setGeneratingLeads] = useState<Set<string>>(new Set());
-  const [adminNotes, setAdminNotes] = useState<Map<string, string>>(new Map());
-  const [savingNotes, setSavingNotes] = useState<Set<string>>(new Set());
   const [createTenantOpen, setCreateTenantOpen] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [newTenantName, setNewTenantName] = useState("");
   const [newTenantSlug, setNewTenantSlug] = useState("");
   const [newTenantDomain, setNewTenantDomain] = useState("");
+  const [csvUploadOpen, setCsvUploadOpen] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
   const hasRedirectedRef = useRef(false);
 
@@ -132,13 +131,6 @@ const AdminDashboard = () => {
       );
 
       setTenants(tenantsWithCounts);
-      
-      // Initialize admin notes map
-      const notesMap = new Map<string, string>();
-      tenantsWithCounts.forEach(tenant => {
-        notesMap.set(tenant.id, tenant.admin_notes || "");
-      });
-      setAdminNotes(notesMap);
     } catch (error: any) {
       console.error("Error loading tenants:", error);
       toast.error(error.message || "Failed to load tenants");
@@ -361,49 +353,6 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleSaveAdminNotes = async (tenantId: string) => {
-    if (!session || !tenantId) {
-      toast.error("You must be logged in");
-      return;
-    }
-
-    const notes = adminNotes.get(tenantId) || "";
-
-    setSavingNotes(prev => new Set(prev).add(tenantId));
-    try {
-      const { error } = await supabase
-        .from("tenants")
-        .update({
-          admin_notes: notes.trim() || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", tenantId);
-
-      if (error) {
-        throw error;
-      }
-
-      toast.success("Admin notes saved successfully");
-      
-      // Update local state
-      setTenants(prev => prev.map(t => 
-        t.id === tenantId 
-          ? { ...t, admin_notes: notes.trim() || null }
-          : t
-      ));
-    } catch (error: any) {
-      console.error("Error saving admin notes:", error);
-      toast.error(error.message || "Failed to save admin notes");
-    } finally {
-      setSavingNotes(prev => {
-        const next = new Set(prev);
-        next.delete(tenantId);
-        return next;
-      });
-    }
-  };
-
-
   const leadGenerationMethods = [
     { value: "google_custom_search", label: "Google Custom Search Engine" },
     { value: "google_places_api", label: "Google Places API" },
@@ -498,44 +447,6 @@ const AdminDashboard = () => {
                         })}
                       </div>
                     </div>
-                    
-                    {/* Admin Notes */}
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <Label className="text-sm font-medium mb-2 block">Additional Notes for Lead Generation</Label>
-                      <Textarea
-                        placeholder="E.g., Focus on companies that use cloud infrastructure, prefer B2B SaaS companies, avoid healthcare companies..."
-                        value={adminNotes.get(tenant.id) || ""}
-                        onChange={(e) => {
-                          const newNotes = new Map(adminNotes);
-                          newNotes.set(tenant.id, e.target.value);
-                          setAdminNotes(newNotes);
-                        }}
-                        rows={4}
-                        className="resize-none mb-2"
-                      />
-                      <p className="text-xs text-muted-foreground mb-2">
-                        These notes will be used to provide additional context when generating leads using AI/LLM methods.
-                      </p>
-                      <Button
-                        onClick={() => handleSaveAdminNotes(tenant.id)}
-                        disabled={savingNotes.has(tenant.id)}
-                        size="sm"
-                        variant="outline"
-                        className="w-full sm:w-auto"
-                      >
-                        {savingNotes.has(tenant.id) ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Saving...
-                          </>
-                        ) : (
-                          <>
-                            <Save className="h-4 w-4 mr-2" />
-                            Save Notes
-                          </>
-                        )}
-                      </Button>
-                    </div>
 
                     <Button
                       onClick={(e) => {
@@ -557,12 +468,41 @@ const AdminDashboard = () => {
                         </>
                       )}
                     </Button>
+
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCsvUploadOpen(tenant.id);
+                      }}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload CSV Leads
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
             ))
           )}
         </div>
+
+        {/* CSV Upload Dialog */}
+        {csvUploadOpen && (
+          <CsvUploadDialog
+            open={true}
+            onOpenChange={(open) => {
+              if (!open) {
+                setCsvUploadOpen(null);
+              }
+            }}
+            tenantId={csvUploadOpen}
+            onSuccess={() => {
+              // Reload tenants to update lead count
+              loadTenants();
+            }}
+          />
+        )}
 
         <Dialog open={createTenantOpen} onOpenChange={setCreateTenantOpen}>
           <DialogContent>

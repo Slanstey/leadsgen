@@ -68,6 +68,14 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
     }
   };
 
+  if (leads.length === 0) {
+    return (
+      <div className="rounded-lg border bg-card p-12 text-center">
+        <p className="text-muted-foreground">No leads found. Leads will appear here once they are generated.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border bg-card">
       <Table>

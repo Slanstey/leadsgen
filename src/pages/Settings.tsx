@@ -1,19 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Save, Loader2, Link2, Unlink } from "lucide-react";
+import { ArrowLeft, Loader2, Link2, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -22,21 +11,6 @@ const Settings = () => {
   const navigate = useNavigate();
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [formData, setFormData] = useState({
-    targetIndustry: "",
-    companySize: "",
-    locations: "",
-    targetPositions: "",
-    revenueRange: "",
-    keywords: "",
-    notes: "",
-    experienceOperator: "=",
-    experienceYears: 0,
-    companyType: "",
-    technologyStack: "",
-    fundingStage: "",
-  });
   const [linkedinConnecting, setLinkedinConnecting] = useState(false);
   const [linkedinDisconnecting, setLinkedinDisconnecting] = useState(false);
   const [linkedinProfile, setLinkedinProfile] = useState<{
@@ -48,9 +22,9 @@ const Settings = () => {
     connected_at: string | null;
   } | null>(null);
 
-  // Load tenant settings and LinkedIn profile
+  // Load LinkedIn profile
   useEffect(() => {
-    const loadSettings = async () => {
+    const loadLinkedInProfile = async () => {
       if (!profile?.id) {
         setLoading(false);
         return;
@@ -157,134 +131,16 @@ const Settings = () => {
             });
           }
         }
-
-        const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
-        
-        // Don't load preferences for default tenant users
-        if (!profile?.tenant_id || profile.tenant_id === DEFAULT_TENANT_ID) {
-          setLoading(false);
-          return;
-        }
-
-        // Load preferences directly from Supabase using user's session
-        const { data: prefs, error } = await supabase
-          .from("tenant_preferences")
-          .select("*")
-          .eq("tenant_id", profile.tenant_id)
-          .single();
-
-        if (error && error.code !== 'PGRST116') {
-          // PGRST116 means no rows found, which is fine
-          console.error("Error loading settings:", error);
-          setLoading(false);
-          return;
-        }
-
-        if (prefs) {
-          // Load consolidated preferences
-          setFormData({
-            targetIndustry: prefs.target_industry || "",
-            companySize: prefs.company_size || "",
-            locations: prefs.locations || prefs.geographic_region || prefs.linkedin_locations || "",
-            targetPositions: prefs.target_positions || prefs.target_roles || prefs.linkedin_positions || "",
-            revenueRange: prefs.revenue_range || "",
-            keywords: prefs.keywords || "",
-            notes: prefs.notes || "",
-            experienceOperator: prefs.experience_operator || prefs.linkedin_experience_operator || "=",
-            experienceYears: prefs.experience_years || prefs.linkedin_experience_years || 0,
-            companyType: prefs.company_type || "",
-            technologyStack: prefs.technology_stack || "",
-            fundingStage: prefs.funding_stage || "",
-          });
-        }
       } catch (error) {
-        console.error("Error loading settings:", error);
+        console.error("Error loading LinkedIn profile:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    loadSettings();
+    loadLinkedInProfile();
   }, [profile]);
 
-  const handleSave = async () => {
-    const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
-    
-    if (!profile?.tenant_id || profile.tenant_id === DEFAULT_TENANT_ID) {
-      toast.error("You cannot save preferences for the default tenant");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      // Prepare preferences data with consolidated fields
-      const preferencesData = {
-        tenant_id: profile.tenant_id,
-        // General preferences
-        target_industry: formData.targetIndustry || null,
-        company_size: formData.companySize || null,
-        locations: formData.locations || null,
-        target_positions: formData.targetPositions || null,
-        revenue_range: formData.revenueRange || null,
-        keywords: formData.keywords || null,
-        notes: formData.notes || null,
-        experience_operator: formData.experienceOperator || "=",
-        experience_years: Number(formData.experienceYears) || 0,
-        company_type: formData.companyType || null,
-        technology_stack: formData.technologyStack || null,
-        funding_stage: formData.fundingStage || null,
-        updated_at: new Date().toISOString(),
-      };
-
-      // Check if preferences already exist
-      const { data: existing, error: checkError } = await supabase
-        .from("tenant_preferences")
-        .select("id")
-        .eq("tenant_id", profile.tenant_id)
-        .single();
-
-      if (checkError && checkError.code !== 'PGRST116') {
-        // PGRST116 means no rows found, which is fine
-        throw checkError;
-      }
-
-      let result;
-      if (existing) {
-        // Update existing preferences
-        const { data, error } = await supabase
-          .from("tenant_preferences")
-          .update(preferencesData)
-          .eq("tenant_id", profile.tenant_id)
-          .select()
-          .single();
-        
-        if (error) throw error;
-        result = data;
-      } else {
-        // Insert new preferences
-        const { data, error } = await supabase
-          .from("tenant_preferences")
-          .insert(preferencesData)
-          .select()
-          .single();
-        
-        if (error) throw error;
-        result = data;
-      }
-
-      if (result) {
-        toast.success("Preferences saved successfully");
-      } else {
-        toast.error("Failed to save preferences");
-      }
-    } catch (error: any) {
-      console.error("Error saving settings:", error);
-      const errorMessage = error?.message || error?.error || "Failed to save settings";
-      toast.error(errorMessage);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleConnectLinkedIn = async () => {
     if (!profile?.id) {
@@ -407,7 +263,7 @@ const Settings = () => {
             </Button>
             <div>
               <h1 className="text-2xl font-bold">Settings</h1>
-              <p className="text-sm text-muted-foreground">Configure your lead generation preferences</p>
+              <p className="text-sm text-muted-foreground">Manage your LinkedIn account connection</p>
             </div>
           </div>
         </div>
@@ -516,250 +372,6 @@ const Settings = () => {
             )}
           </CardContent>
         </Card>
-
-        {/* Only show preferences if user is not in default tenant */}
-        {profile?.tenant_id !== 'ffffffff-ffff-ffff-ffff-ffffffffffff' && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Lead Generation Preferences</CardTitle>
-              <CardDescription>
-                Define your ideal lead criteria to help target the right prospects
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="targetIndustry">Target Industry</Label>
-                <Input
-                  id="targetIndustry"
-                  placeholder="e.g., Mining, Energy, Manufacturing"
-                  value={formData.targetIndustry}
-                  onChange={(e) =>
-                    setFormData({ ...formData, targetIndustry: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="companySize">Company Size</Label>
-                <Select
-                  value={formData.companySize}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, companySize: value })
-                  }
-                >
-                  <SelectTrigger id="companySize">
-                    <SelectValue placeholder="Select company size" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1-50">1-50 employees</SelectItem>
-                    <SelectItem value="51-200">51-200 employees</SelectItem>
-                    <SelectItem value="201-1000">201-1000 employees</SelectItem>
-                    <SelectItem value="1001-5000">1001-5000 employees</SelectItem>
-                    <SelectItem value="5000+">5000+ employees</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="locations">Locations</Label>
-                <Input
-                  id="locations"
-                  placeholder="e.g., New York, San Francisco, London, North America, APAC"
-                  value={formData.locations}
-                  onChange={(e) =>
-                    setFormData({ ...formData, locations: e.target.value })
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Comma-separated list of locations or regions
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="revenueRange">Annual Revenue Range</Label>
-                <Select
-                  value={formData.revenueRange}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, revenueRange: value })
-                  }
-                >
-                  <SelectTrigger id="revenueRange">
-                    <SelectValue placeholder="Select revenue range" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0-10m">$0-10M</SelectItem>
-                    <SelectItem value="10m-50m">$10M-50M</SelectItem>
-                    <SelectItem value="50m-100m">$50M-100M</SelectItem>
-                    <SelectItem value="100m-500m">$100M-500M</SelectItem>
-                    <SelectItem value="500m-1b">$500M-1B</SelectItem>
-                    <SelectItem value="1b+">$1B+</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="companyType">Company Type</Label>
-                <Select
-                  value={formData.companyType}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, companyType: value })
-                  }
-                >
-                  <SelectTrigger id="companyType">
-                    <SelectValue placeholder="Select company type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="B2B">B2B</SelectItem>
-                    <SelectItem value="B2C">B2C</SelectItem>
-                    <SelectItem value="Enterprise">Enterprise</SelectItem>
-                    <SelectItem value="SMB">SMB</SelectItem>
-                    <SelectItem value="Startup">Startup</SelectItem>
-                    <SelectItem value="Non-profit">Non-profit</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="fundingStage">Funding Stage</Label>
-                <Select
-                  value={formData.fundingStage}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, fundingStage: value })
-                  }
-                >
-                  <SelectTrigger id="fundingStage">
-                    <SelectValue placeholder="Select funding stage" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Bootstrapped">Bootstrapped</SelectItem>
-                    <SelectItem value="Seed">Seed</SelectItem>
-                    <SelectItem value="Series A">Series A</SelectItem>
-                    <SelectItem value="Series B">Series B</SelectItem>
-                    <SelectItem value="Series C+">Series C+</SelectItem>
-                    <SelectItem value="Public">Public</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="targetPositions">Target Positions/Roles</Label>
-              <Input
-                id="targetPositions"
-                placeholder="e.g., CEO, CTO, VP Engineering, COO, VP Operations"
-                value={formData.targetPositions}
-                onChange={(e) =>
-                  setFormData({ ...formData, targetPositions: e.target.value })
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Comma-separated list of target positions or roles
-              </p>
-            </div>
-
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="experienceOperator">Experience Operator</Label>
-                <Select
-                  value={formData.experienceOperator}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, experienceOperator: value })
-                  }
-                >
-                  <SelectTrigger id="experienceOperator">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value=">">Greater than</SelectItem>
-                    <SelectItem value="<">Less than</SelectItem>
-                    <SelectItem value="=">Equal to</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="experienceYears">Years of Experience</Label>
-                <Input
-                  id="experienceYears"
-                  type="number"
-                  min="0"
-                  max="30"
-                  placeholder="0"
-                  value={formData.experienceYears}
-                  onChange={(e) =>
-                    setFormData({ 
-                      ...formData, 
-                      experienceYears: parseInt(e.target.value) || 0 
-                    })
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Number of years (0-30)
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="technologyStack">Technology Stack</Label>
-              <Input
-                id="technologyStack"
-                placeholder="e.g., Python, React, AWS, Docker, Kubernetes"
-                value={formData.technologyStack}
-                onChange={(e) =>
-                  setFormData({ ...formData, technologyStack: e.target.value })
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Preferred technologies or tools (comma-separated)
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="keywords">Keywords</Label>
-              <Input
-                id="keywords"
-                placeholder="e.g., sustainability, expansion, digital transformation"
-                value={formData.keywords}
-                onChange={(e) =>
-                  setFormData({ ...formData, keywords: e.target.value })
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Keywords to help identify relevant leads
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="notes">Additional Notes</Label>
-              <Textarea
-                id="notes"
-                placeholder="Any additional criteria or preferences..."
-                value={formData.notes}
-                onChange={(e) =>
-                  setFormData({ ...formData, notes: e.target.value })
-                }
-                className="min-h-[100px]"
-              />
-            </div>
-
-
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => navigate("/")}>
-                Cancel
-              </Button>
-              <Button onClick={handleSave} className="gap-2" disabled={saving}>
-                {saving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                Save Preferences
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-        )}
       </main>
     </div>
   );

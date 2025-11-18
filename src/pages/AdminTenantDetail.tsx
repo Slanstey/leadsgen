@@ -3,12 +3,23 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Loader2, User, Mail, Calendar, Building2, Eye, Download } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ArrowLeft, Loader2, User, Mail, Calendar, Building2, Eye, Download, Save, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { LeadsTable } from "@/components/LeadsTable";
 import { ExportDialog } from "@/components/ExportDialog";
+import { CsvUploadDialog } from "@/components/CsvUploadDialog";
 import { Lead, LeadStatus } from "@/types/lead";
 
 interface TenantDetail {
@@ -42,6 +53,24 @@ const AdminTenantDetail = () => {
   const [loadingLeads, setLoadingLeads] = useState(false);
   const [showLeads, setShowLeads] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [csvUploadOpen, setCsvUploadOpen] = useState(false);
+  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [formData, setFormData] = useState({
+    targetIndustry: "",
+    companySize: "",
+    locations: "",
+    targetPositions: "",
+    revenueRange: "",
+    keywords: "",
+    notes: "",
+    experienceOperator: "=",
+    experienceYears: 0,
+    companyType: "",
+    technologyStack: "",
+    fundingStage: "",
+  });
+  const [adminNotes, setAdminNotes] = useState("");
 
   useEffect(() => {
     // Check if user is admin
@@ -101,6 +130,27 @@ const AdminTenantDetail = () => {
         preferences: prefsData || null,
         users: usersData || [],
       });
+
+      // Load preferences into form
+      if (prefsData) {
+        setFormData({
+          targetIndustry: prefsData.target_industry || "",
+          companySize: prefsData.company_size || "",
+          locations: prefsData.locations || prefsData.geographic_region || prefsData.linkedin_locations || "",
+          targetPositions: prefsData.target_positions || prefsData.target_roles || prefsData.linkedin_positions || "",
+          revenueRange: prefsData.revenue_range || "",
+          keywords: prefsData.keywords || "",
+          notes: prefsData.notes || "",
+          experienceOperator: prefsData.experience_operator || prefsData.linkedin_experience_operator || "=",
+          experienceYears: prefsData.experience_years || prefsData.linkedin_experience_years || 0,
+          companyType: prefsData.company_type || "",
+          technologyStack: prefsData.technology_stack || "",
+          fundingStage: prefsData.funding_stage || "",
+        });
+      }
+
+      // Load admin notes
+      setAdminNotes(tenantData.admin_notes || "");
     } catch (error: any) {
       console.error("Error loading tenant detail:", error);
       toast.error(error.message || "Failed to load tenant details");
@@ -292,6 +342,126 @@ const AdminTenantDetail = () => {
     }
   };
 
+  const handleSavePreferences = async () => {
+    if (!tenantId) {
+      toast.error("Tenant ID not found");
+      return;
+    }
+
+    setSavingPreferences(true);
+    try {
+      // Prepare preferences data with consolidated fields
+      const preferencesData = {
+        tenant_id: tenantId,
+        // General preferences
+        target_industry: formData.targetIndustry || null,
+        company_size: formData.companySize || null,
+        locations: formData.locations || null,
+        target_positions: formData.targetPositions || null,
+        revenue_range: formData.revenueRange || null,
+        keywords: formData.keywords || null,
+        notes: formData.notes || null,
+        experience_operator: formData.experienceOperator || "=",
+        experience_years: Number(formData.experienceYears) || 0,
+        company_type: formData.companyType || null,
+        technology_stack: formData.technologyStack || null,
+        funding_stage: formData.fundingStage || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Check if preferences already exist
+      const { data: existing, error: checkError } = await supabase
+        .from("tenant_preferences")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        // PGRST116 means no rows found, which is fine
+        throw checkError;
+      }
+
+      let result;
+      if (existing) {
+        // Update existing preferences
+        const { data, error } = await supabase
+          .from("tenant_preferences")
+          .update(preferencesData)
+          .eq("tenant_id", tenantId)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        result = data;
+      } else {
+        // Insert new preferences
+        const { data, error } = await supabase
+          .from("tenant_preferences")
+          .insert(preferencesData)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        result = data;
+      }
+
+      if (result) {
+        // Update local state
+        setTenantDetail(prev => prev ? {
+          ...prev,
+          preferences: result
+        } : null);
+        toast.success("Preferences saved successfully");
+      } else {
+        toast.error("Failed to save preferences");
+      }
+    } catch (error: any) {
+      console.error("Error saving preferences:", error);
+      const errorMessage = error?.message || error?.error || "Failed to save preferences";
+      toast.error(errorMessage);
+    } finally {
+      setSavingPreferences(false);
+    }
+  };
+
+  const handleSaveAdminNotes = async () => {
+    if (!tenantId) {
+      toast.error("Tenant ID not found");
+      return;
+    }
+
+    setSavingNotes(true);
+    try {
+      const { error } = await supabase
+        .from("tenants")
+        .update({
+          admin_notes: adminNotes.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", tenantId);
+
+      if (error) {
+        throw error;
+      }
+
+      // Update local state
+      setTenantDetail(prev => prev ? {
+        ...prev,
+        tenant: {
+          ...prev.tenant,
+          admin_notes: adminNotes.trim() || null,
+        }
+      } : null);
+
+      toast.success("Admin notes saved successfully");
+    } catch (error: any) {
+      console.error("Error saving admin notes:", error);
+      toast.error(error.message || "Failed to save admin notes");
+    } finally {
+      setSavingNotes(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-4xl mx-auto">
@@ -333,48 +503,277 @@ const AdminTenantDetail = () => {
             </CardContent>
           </Card>
 
+          {/* Admin Notes */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Admin Notes</CardTitle>
+              <CardDescription>Additional notes for lead generation context</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Textarea
+                placeholder="E.g., Focus on companies that use cloud infrastructure, prefer B2B SaaS companies, avoid healthcare companies..."
+                value={adminNotes}
+                onChange={(e) => setAdminNotes(e.target.value)}
+                rows={4}
+                className="resize-none"
+              />
+              <p className="text-xs text-muted-foreground">
+                These notes will be used to provide additional context when generating leads using AI/LLM methods.
+              </p>
+              <Button
+                onClick={handleSaveAdminNotes}
+                disabled={savingNotes}
+                size="sm"
+                variant="outline"
+              >
+                {savingNotes ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Notes
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+
           {/* Preferences */}
           <Card>
             <CardHeader>
-              <CardTitle>Preferences</CardTitle>
-              <CardDescription>Lead generation preferences and settings</CardDescription>
+              <CardTitle>Lead Generation Preferences</CardTitle>
+              <CardDescription>Define ideal lead criteria to help target the right prospects</CardDescription>
             </CardHeader>
-            <CardContent>
-              {tenantDetail.preferences ? (
-                <div className="space-y-4">
-                  {Object.entries(tenantDetail.preferences).map(([key, value]) => {
-                    // Skip internal fields
-                    if (['id', 'tenant_id', 'created_at', 'updated_at'].includes(key)) {
-                      return null;
+            <CardContent className="space-y-6">
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="targetIndustry">Target Industry</Label>
+                  <Input
+                    id="targetIndustry"
+                    placeholder="e.g., Mining, Energy, Manufacturing"
+                    value={formData.targetIndustry}
+                    onChange={(e) =>
+                      setFormData({ ...formData, targetIndustry: e.target.value })
                     }
-                    
-                    // Skip null/empty values
-                    if (value === null || value === '') {
-                      return null;
-                    }
-
-                    // Format key for display
-                    const displayKey = key
-                      .replace(/_/g, ' ')
-                      .replace(/\b\w/g, l => l.toUpperCase());
-
-                    return (
-                      <div key={key}>
-                        <p className="text-sm font-medium text-muted-foreground">{displayKey}</p>
-                        <p className="text-lg">{String(value)}</p>
-                        <Separator className="mt-2" />
-                      </div>
-                    );
-                  })}
-                  {Object.entries(tenantDetail.preferences).filter(([key, value]) => 
-                    !['id', 'tenant_id', 'created_at', 'updated_at'].includes(key) && value !== null && value !== ''
-                  ).length === 0 && (
-                    <p className="text-muted-foreground">No preferences configured</p>
-                  )}
+                  />
                 </div>
-              ) : (
-                <p className="text-muted-foreground">No preferences configured</p>
-              )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="companySize">Company Size</Label>
+                  <Select
+                    value={formData.companySize}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, companySize: value })
+                    }
+                  >
+                    <SelectTrigger id="companySize">
+                      <SelectValue placeholder="Select company size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1-50">1-50 employees</SelectItem>
+                      <SelectItem value="51-200">51-200 employees</SelectItem>
+                      <SelectItem value="201-1000">201-1000 employees</SelectItem>
+                      <SelectItem value="1001-5000">1001-5000 employees</SelectItem>
+                      <SelectItem value="5000+">5000+ employees</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="locations">Locations</Label>
+                  <Input
+                    id="locations"
+                    placeholder="e.g., New York, San Francisco, London, North America, APAC"
+                    value={formData.locations}
+                    onChange={(e) =>
+                      setFormData({ ...formData, locations: e.target.value })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Comma-separated list of locations or regions
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="revenueRange">Annual Revenue Range</Label>
+                  <Select
+                    value={formData.revenueRange}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, revenueRange: value })
+                    }
+                  >
+                    <SelectTrigger id="revenueRange">
+                      <SelectValue placeholder="Select revenue range" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0-10m">$0-10M</SelectItem>
+                      <SelectItem value="10m-50m">$10M-50M</SelectItem>
+                      <SelectItem value="50m-100m">$50M-100M</SelectItem>
+                      <SelectItem value="100m-500m">$100M-500M</SelectItem>
+                      <SelectItem value="500m-1b">$500M-1B</SelectItem>
+                      <SelectItem value="1b+">$1B+</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="companyType">Company Type</Label>
+                  <Select
+                    value={formData.companyType}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, companyType: value })
+                    }
+                  >
+                    <SelectTrigger id="companyType">
+                      <SelectValue placeholder="Select company type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="B2B">B2B</SelectItem>
+                      <SelectItem value="B2C">B2C</SelectItem>
+                      <SelectItem value="Enterprise">Enterprise</SelectItem>
+                      <SelectItem value="SMB">SMB</SelectItem>
+                      <SelectItem value="Startup">Startup</SelectItem>
+                      <SelectItem value="Non-profit">Non-profit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="fundingStage">Funding Stage</Label>
+                  <Select
+                    value={formData.fundingStage}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, fundingStage: value })
+                    }
+                  >
+                    <SelectTrigger id="fundingStage">
+                      <SelectValue placeholder="Select funding stage" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Bootstrapped">Bootstrapped</SelectItem>
+                      <SelectItem value="Seed">Seed</SelectItem>
+                      <SelectItem value="Series A">Series A</SelectItem>
+                      <SelectItem value="Series B">Series B</SelectItem>
+                      <SelectItem value="Series C+">Series C+</SelectItem>
+                      <SelectItem value="Public">Public</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="targetPositions">Target Positions/Roles</Label>
+                <Input
+                  id="targetPositions"
+                  placeholder="e.g., CEO, CTO, VP Engineering, COO, VP Operations"
+                  value={formData.targetPositions}
+                  onChange={(e) =>
+                    setFormData({ ...formData, targetPositions: e.target.value })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Comma-separated list of target positions or roles
+                </p>
+              </div>
+
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="experienceOperator">Experience Operator</Label>
+                  <Select
+                    value={formData.experienceOperator}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, experienceOperator: value })
+                    }
+                  >
+                    <SelectTrigger id="experienceOperator">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value=">">Greater than</SelectItem>
+                      <SelectItem value="<">Less than</SelectItem>
+                      <SelectItem value="=">Equal to</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="experienceYears">Years of Experience</Label>
+                  <Input
+                    id="experienceYears"
+                    type="number"
+                    min="0"
+                    max="30"
+                    placeholder="0"
+                    value={formData.experienceYears}
+                    onChange={(e) =>
+                      setFormData({ 
+                        ...formData, 
+                        experienceYears: parseInt(e.target.value) || 0 
+                      })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Number of years (0-30)
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="technologyStack">Technology Stack</Label>
+                <Input
+                  id="technologyStack"
+                  placeholder="e.g., Python, React, AWS, Docker, Kubernetes"
+                  value={formData.technologyStack}
+                  onChange={(e) =>
+                    setFormData({ ...formData, technologyStack: e.target.value })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Preferred technologies or tools (comma-separated)
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="keywords">Keywords</Label>
+                <Input
+                  id="keywords"
+                  placeholder="e.g., sustainability, expansion, digital transformation"
+                  value={formData.keywords}
+                  onChange={(e) =>
+                    setFormData({ ...formData, keywords: e.target.value })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Keywords to help identify relevant leads
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Additional Notes</Label>
+                <Textarea
+                  id="notes"
+                  placeholder="Any additional criteria or preferences..."
+                  value={formData.notes}
+                  onChange={(e) =>
+                    setFormData({ ...formData, notes: e.target.value })
+                  }
+                  className="min-h-[100px]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button onClick={handleSavePreferences} className="gap-2" disabled={savingPreferences}>
+                  {savingPreferences ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  Save Preferences
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -429,6 +828,13 @@ const AdminTenantDetail = () => {
                   <CardDescription>View and manage leads for this tenant</CardDescription>
                 </div>
                 <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setCsvUploadOpen(true)}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload CSV
+                  </Button>
                   {showLeads && (
                     <Button
                       variant="outline"
@@ -488,6 +894,18 @@ const AdminTenantDetail = () => {
           onOpenChange={setExportDialogOpen}
           allLeads={leads}
           filteredLeads={leads}
+        />
+
+        <CsvUploadDialog
+          open={csvUploadOpen}
+          onOpenChange={setCsvUploadOpen}
+          tenantId={tenantId || ""}
+          onSuccess={() => {
+            // Refresh leads if they're already shown
+            if (showLeads) {
+              fetchLeads();
+            }
+          }}
         />
       </div>
     </div>

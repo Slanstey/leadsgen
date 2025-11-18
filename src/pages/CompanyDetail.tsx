@@ -95,27 +95,11 @@ const CompanyDetail = () => {
     try {
       setNewsLoading(true);
       
-      // Call the Supabase Edge Function to get news
-      const { data, error } = await supabase.functions.invoke('generate-email', {
-        body: { 
-          action: 'get_news',
-          company_name: companyName 
-        }
-      });
-
-      if (error) {
-        console.error("Error fetching news:", error);
-        setNews([]);
-        return;
-      }
-
-      if (data && Array.isArray(data.news)) {
-        setNews(data.news);
-      } else {
-        setNews([]);
-      }
+      // News fetching functionality removed - edge function no longer available
+      // Can be reimplemented later if needed
+      setNews([]);
     } catch (error) {
-      console.error("Error in LLM news fetch:", error);
+      console.error("Error in news fetch:", error);
       setNews([]);
     } finally {
       setNewsLoading(false);
