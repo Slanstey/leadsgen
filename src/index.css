@@ -8,108 +8,112 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 220 20% 98%;
-    --foreground: 220 20% 10%;
+    /* Refined color palette - warm, professional, sophisticated */
+    --background: 240 10% 98%;
+    --foreground: 240 15% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 10%;
+    --card-foreground: 240 15% 10%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 10%;
+    --popover-foreground: 240 15% 10%;
 
-    --primary: 220 70% 50%;
+    /* Deep professional blue with slight purple undertone */
+    --primary: 230 75% 55%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 15% 95%;
-    --secondary-foreground: 220 20% 10%;
+    --secondary: 240 10% 96%;
+    --secondary-foreground: 240 15% 10%;
 
-    --muted: 220 15% 95%;
-    --muted-foreground: 220 10% 45%;
+    --muted: 240 8% 95%;
+    --muted-foreground: 240 8% 45%;
 
-    --accent: 185 70% 45%;
+    /* Vibrant teal/cyan for energy and growth */
+    --accent: 185 70% 48%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 70% 55%;
+    /* Refined red, not harsh */
+    --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 15% 88%;
-    --input: 220 15% 88%;
-    --ring: 220 70% 50%;
+    /* Subtle borders - almost invisible */
+    --border: 240 10% 88%;
+    --input: 240 10% 88%;
+    --ring: 230 75% 55%;
 
-    --radius: 0.5rem;
+    /* Modern border radius */
+    --radius: 0.75rem;
     
-    --success: 145 65% 45%;
+    /* Semantic colors - refined and purposeful */
+    --success: 145 65% 48%;
     --success-foreground: 0 0% 100%;
     
-    --warning: 40 90% 55%;
+    --warning: 38 92% 58%;
     --warning-foreground: 0 0% 100%;
     
-    --info: 210 75% 55%;
+    --info: 210 75% 58%;
     --info-foreground: 0 0% 100%;
 
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 240 8% 98%;
+    --sidebar-foreground: 240 15% 10%;
+    --sidebar-primary: 230 75% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 8% 95%;
+    --sidebar-accent-foreground: 240 15% 10%;
+    --sidebar-border: 240 10% 88%;
+    --sidebar-ring: 230 75% 55%;
   }
 
   .dark {
-    --background: 220 25% 8%;
-    --foreground: 220 10% 95%;
+    /* Rich dark mode - not pure black */
+    --background: 240 15% 8%;
+    --foreground: 240 5% 95%;
 
-    --card: 220 20% 12%;
-    --card-foreground: 220 10% 95%;
+    --card: 240 12% 12%;
+    --card-foreground: 240 5% 95%;
 
-    --popover: 220 20% 12%;
-    --popover-foreground: 220 10% 95%;
+    --popover: 240 12% 12%;
+    --popover-foreground: 240 5% 95%;
 
-    --primary: 220 70% 55%;
+    /* Slightly brighter for dark mode visibility */
+    --primary: 230 80% 60%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 20% 18%;
-    --secondary-foreground: 220 10% 95%;
+    --secondary: 240 12% 18%;
+    --secondary-foreground: 240 5% 95%;
 
-    --muted: 220 20% 18%;
-    --muted-foreground: 220 10% 65%;
+    --muted: 240 12% 18%;
+    --muted-foreground: 240 5% 65%;
 
-    --accent: 185 65% 50%;
+    --accent: 185 75% 52%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 65% 50%;
+    --destructive: 0 65% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 20% 22%;
-    --input: 220 20% 22%;
-    --ring: 220 70% 55%;
+    /* More visible borders in dark mode */
+    --border: 240 12% 22%;
+    --input: 240 12% 22%;
+    --ring: 230 80% 60%;
     
-    --success: 145 60% 50%;
+    /* Slightly brighter semantic colors */
+    --success: 145 60% 52%;
     --success-foreground: 0 0% 100%;
     
-    --warning: 40 85% 60%;
+    --warning: 38 85% 62%;
     --warning-foreground: 0 0% 100%;
     
-    --info: 210 70% 60%;
+    --info: 210 70% 62%;
     --info-foreground: 0 0% 100%;
     
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-background: 240 15% 10%;
+    --sidebar-foreground: 240 5% 95%;
+    --sidebar-primary: 230 80% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 240 12% 18%;
+    --sidebar-accent-foreground: 240 5% 95%;
+    --sidebar-border: 240 12% 22%;
+    --sidebar-ring: 230 80% 60%;
   }
 }
 
@@ -120,5 +124,95 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Atmospheric background with subtle gradient */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: 
+      radial-gradient(circle at 20% 50%, hsl(230, 75%, 55%, 0.03) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, hsl(185, 70%, 48%, 0.03) 0%, transparent 50%),
+      hsl(var(--background));
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--background));
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 5px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  /* Animation utilities */
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-in-from-bottom {
+    from {
+      transform: translateY(16px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes zoom-in {
+    from {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  .animate-in {
+    animation: fade-in 0.5s ease-out;
+  }
+
+  .fade-in {
+    animation: fade-in 0.5s ease-out;
+  }
+
+  .slide-in-from-bottom-4 {
+    animation: slide-in-from-bottom 0.5s ease-out;
+  }
+
+  .zoom-in-95 {
+    animation: zoom-in 0.5s ease-out;
   }
 }

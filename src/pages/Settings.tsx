@@ -249,50 +249,53 @@ const Settings = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center gap-4">
+      {/* Refined header matching dashboard */}
+      <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 shadow-soft">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center gap-4">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => navigate("/")}
-              className="gap-2"
+              className="gap-2 h-9"
             >
               <ArrowLeft className="h-4 w-4" />
-              Back to Dashboard
+              <span className="hidden sm:inline">Back</span>
             </Button>
-            <div>
-              <h1 className="text-2xl font-bold">Settings</h1>
-              <p className="text-sm text-muted-foreground">Manage your LinkedIn account connection</p>
+            <div className="flex-1">
+              <h1 className="text-xl font-semibold tracking-tight bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                Settings
+              </h1>
+              <p className="text-xs text-muted-foreground hidden sm:block">Manage your account connections</p>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-6 py-8">
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
         {/* LinkedIn Connection Section */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>LinkedIn Account Connection</CardTitle>
-            <CardDescription>
+        <Card className="border-border/50 shadow-soft-lg animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <CardHeader className="pb-6">
+            <CardTitle className="text-2xl font-bold tracking-tight">LinkedIn Account Connection</CardTitle>
+            <CardDescription className="text-base mt-2">
               Connect your LinkedIn account to access your network, view potential leads, and manage warm introductions
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
             {linkedinProfile?.profile_id ? (
-              <div className="space-y-4">
-                <div className="flex items-start justify-between p-4 border rounded-lg bg-muted/50">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold">
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 p-6 border border-border/50 rounded-xl bg-muted/30 shadow-soft">
+                  <div className="space-y-3 flex-1">
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center text-white font-semibold text-lg shadow-soft">
                         {(linkedinProfile.first_name?.[0] || "") + (linkedinProfile.last_name?.[0] || "")}
                       </div>
                       <div>
-                        <p className="font-semibold">
+                        <p className="font-semibold text-base">
                           {linkedinProfile.first_name} {linkedinProfile.last_name}
                         </p>
                         {linkedinProfile.headline && (
-                          <p className="text-sm text-muted-foreground">{linkedinProfile.headline}</p>
+                          <p className="text-sm text-muted-foreground mt-0.5">{linkedinProfile.headline}</p>
                         )}
                       </div>
                     </div>
@@ -301,9 +304,10 @@ const Settings = () => {
                         href={linkedinProfile.profile_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                        className="text-sm text-primary hover:text-primary/80 hover:underline inline-flex items-center gap-1.5 transition-colors"
                       >
                         View LinkedIn Profile
+                        <Link2 className="h-3.5 w-3.5" />
                       </a>
                     )}
                     {linkedinProfile.connected_at && (
@@ -316,7 +320,7 @@ const Settings = () => {
                     variant="outline"
                     onClick={handleDisconnectLinkedIn}
                     disabled={linkedinDisconnecting}
-                    className="gap-2"
+                    className="gap-2 h-10 shrink-0"
                   >
                     {linkedinDisconnecting ? (
                       <>
@@ -331,24 +335,26 @@ const Settings = () => {
                     )}
                   </Button>
                 </div>
-                <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                  <p className="text-sm text-blue-900 dark:text-blue-100">
-                    <strong>Connected!</strong> Your LinkedIn account is connected. You can now use your network to find leads and manage warm introductions.
+                <div className="p-4 bg-success/10 rounded-xl border border-success/30">
+                  <p className="text-sm text-foreground">
+                    <strong className="font-semibold text-success">Connected!</strong> Your LinkedIn account is connected. You can now use your network to find leads and manage warm introductions.
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="p-6 border-2 border-dashed rounded-lg text-center">
-                  <Link2 className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-lg font-semibold mb-2">Connect Your LinkedIn Account</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
+              <div className="space-y-6">
+                <div className="p-8 lg:p-12 border-2 border-dashed border-border/50 rounded-xl text-center bg-muted/20">
+                  <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-muted mb-4">
+                    <Link2 className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-xl font-semibold mb-2">Connect Your LinkedIn Account</h3>
+                  <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
                     Connect your LinkedIn account to access your professional network, view potential leads in your network, and assign tiers to connections for warm introductions.
                   </p>
                   <Button
                     onClick={handleConnectLinkedIn}
                     disabled={linkedinConnecting}
-                    className="gap-2"
+                    className="gap-2 h-11 px-6"
                   >
                     {linkedinConnecting ? (
                       <>
@@ -363,9 +369,9 @@ const Settings = () => {
                     )}
                   </Button>
                 </div>
-                <div className="p-4 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
-                  <p className="text-sm text-amber-900 dark:text-amber-100">
-                    <strong>Note:</strong> You'll be redirected to LinkedIn to authorize the connection. We'll only access your profile information and network connections to help you find leads.
+                <div className="p-4 bg-warning/10 rounded-xl border border-warning/30">
+                  <p className="text-sm text-foreground">
+                    <strong className="font-semibold text-warning">Note:</strong> You'll be redirected to LinkedIn to authorize the connection. We'll only access your profile information and network connections to help you find leads.
                   </p>
                 </div>
               </div>

@@ -250,11 +250,20 @@ def verify_auth(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
 
 def verify_admin(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     """Verify JWT token and check if user is admin"""
-    user_info = verify_auth(authorization)
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+    
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
     
     try:
-        # Check if user is admin
-        profile_result = supabase.table("user_profiles").select("is_admin").eq("id", user_info["user_id"]).single().execute()
+        # Use anon key client for auth verification (validates user sessions properly)
+        response = supabase_auth.auth.get_user(token)
+        
+        if not response.user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Use service role client for database queries (bypasses RLS)
+        profile_result = supabase.table("user_profiles").select("is_admin, tenant_id").eq("id", response.user.id).single().execute()
         
         if not profile_result.data:
             raise HTTPException(status_code=404, detail="User profile not found")
@@ -264,9 +273,21 @@ def verify_admin(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
         if not is_admin:
             raise HTTPException(status_code=403, detail="Admin access required")
         
-        return user_info
+        # Return user info with tenant_id (may be None for admins, which is fine)
+        return {
+            "user_id": response.user.id,
+            "tenant_id": profile_result.data.get("tenant_id")  # May be None for admins
+        }
     except HTTPException:
         raise
+    except PostgrestAPIError as e:
+        error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
+        if error_dict.get('code') == 'PGRST116':
+            raise HTTPException(
+                status_code=404,
+                detail="User profile not found. Please complete your profile setup in the application."
+            )
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     except Exception as e:
         logger.error(f"Admin verification error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Admin verification failed: {str(e)}")

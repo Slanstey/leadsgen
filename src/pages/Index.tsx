@@ -17,7 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { BarChart3, Settings, Search, Menu, Home, LogOut, Download } from "lucide-react";
+import { BarChart3, Settings, Search, Menu, Home, LogOut, Download, Loader2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
@@ -246,25 +246,28 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between gap-3">
+      {/* Refined header with subtle elevation */}
+      <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 shadow-soft">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <BarChart3 className="h-6 w-6" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-soft">
+                <BarChart3 className="h-5 w-5" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold">LeadFlow</h1>
-                <p className="text-sm text-muted-foreground">Lead Generation Dashboard</p>
+                <h1 className="text-xl font-semibold tracking-tight bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  LeadFlow
+                </h1>
+                <p className="text-xs text-muted-foreground hidden sm:block">Lead Generation Dashboard</p>
               </div>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
+                <Button variant="ghost" size="icon" className="h-9 w-9">
                   <Menu className="h-5 w-5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem onClick={() => navigate("/")}>
                   <Home className="mr-2 h-4 w-4" />
                   Home
@@ -295,111 +298,135 @@ const Index = () => {
         </div>
       </header>
 
-      <main className="container mx-auto px-6 py-8">
-        <div className="mb-6">
-          <h2 className="text-3xl font-bold mb-2">Active Leads</h2>
-          <p className="text-muted-foreground">
-            Track and manage your lead pipeline
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+        {/* Page header with better typography and staggered animation */}
+        <div className="mb-8 lg:mb-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <h2 className="text-3xl lg:text-4xl font-bold tracking-tight mb-2 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+            Active Leads
+          </h2>
+          <p className="text-muted-foreground text-base">
+            Track and manage your lead pipeline with precision
           </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4 mb-8">
-          <div className="rounded-lg border bg-card p-6">
-            <div className="text-sm font-medium text-muted-foreground">Total Leads</div>
-            <div className="text-3xl font-bold mt-2">{filteredLeads.length}</div>
+        {/* Enhanced stats cards with better visual hierarchy and staggered animations */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8 lg:mb-12">
+          <div className="group relative overflow-hidden rounded-xl bg-card p-6 shadow-soft border border-border/50 hover:shadow-soft-lg transition-all duration-200 hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '0ms' }}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium text-muted-foreground">Total Leads</div>
+            </div>
+            <div className="text-3xl lg:text-4xl font-bold tracking-tight">{filteredLeads.length}</div>
+            <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
-          <div className="rounded-lg border bg-card p-6">
-            <div className="text-sm font-medium text-muted-foreground">Qualified</div>
-            <div className="text-3xl font-bold mt-2 text-success">
+          <div className="group relative overflow-hidden rounded-xl bg-card p-6 shadow-soft border border-border/50 hover:shadow-soft-lg transition-all duration-200 hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '100ms' }}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium text-muted-foreground">Qualified</div>
+            </div>
+            <div className="text-3xl lg:text-4xl font-bold tracking-tight text-success">
               {filteredLeads.filter((l) => l.status === "qualified").length}
             </div>
+            <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-success/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
-          <div className="rounded-lg border bg-card p-6">
-            <div className="text-sm font-medium text-muted-foreground">In Progress</div>
-            <div className="text-3xl font-bold mt-2 text-info">
+          <div className="group relative overflow-hidden rounded-xl bg-card p-6 shadow-soft border border-border/50 hover:shadow-soft-lg transition-all duration-200 hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '200ms' }}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium text-muted-foreground">In Progress</div>
+            </div>
+            <div className="text-3xl lg:text-4xl font-bold tracking-tight text-info">
               {filteredLeads.filter((l) => l.status === "in_progress").length}
             </div>
+            <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-info/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
-          <div className="rounded-lg border bg-card p-6">
-            <div className="text-sm font-medium text-muted-foreground">Closed Won</div>
-            <div className="text-3xl font-bold mt-2 text-accent">
+          <div className="group relative overflow-hidden rounded-xl bg-card p-6 shadow-soft border border-border/50 hover:shadow-soft-lg transition-all duration-200 hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '300ms' }}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium text-muted-foreground">Closed Won</div>
+            </div>
+            <div className="text-3xl lg:text-4xl font-bold tracking-tight text-accent">
               {filteredLeads.filter((l) => l.status === "closed_won").length}
             </div>
+            <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-accent/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
         </div>
 
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search companies..."
-              value={companySearch}
-              onChange={(e) => setCompanySearch(e.target.value)}
-              className="pl-9"
-            />
+        {/* Refined filters section */}
+        <div className="mb-8 space-y-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search companies..."
+                value={companySearch}
+                onChange={(e) => setCompanySearch(e.target.value)}
+                className="pl-9 h-11 bg-background border-border/50 focus:border-primary/50 transition-colors"
+              />
+            </div>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => setStatusFilter(value as LeadStatus | "all")}
+            >
+              <SelectTrigger className="w-full sm:w-[200px] h-11 border-border/50">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="not_contacted">Not Contacted</SelectItem>
+                <SelectItem value="contacted">Contacted</SelectItem>
+                <SelectItem value="qualified">Qualified</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="closed_won">Closed Won</SelectItem>
+                <SelectItem value="closed_lost">Closed Lost</SelectItem>
+                <SelectItem value="ignored">Ignored</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              onClick={() => setExportDialogOpen(true)}
+              className="w-full sm:w-auto h-11 border-border/50 hover:bg-muted/50"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
           </div>
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => setStatusFilter(value as LeadStatus | "all")}
-          >
-            <SelectTrigger className="w-full sm:w-[200px]">
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="not_contacted">Not Contacted</SelectItem>
-              <SelectItem value="contacted">Contacted</SelectItem>
-              <SelectItem value="qualified">Qualified</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="closed_won">Closed Won</SelectItem>
-              <SelectItem value="closed_lost">Closed Lost</SelectItem>
-              <SelectItem value="ignored">Ignored</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
             <Checkbox
               id="showIgnored"
               checked={showIgnored}
               onCheckedChange={(checked) => {
                 setShowIgnored(checked === true);
               }}
+              className="h-4 w-4"
             />
             <Label
               htmlFor="showIgnored"
-              className="text-sm font-normal cursor-pointer"
+              className="text-sm font-normal cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
             >
               Show ignored leads
             </Label>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => setExportDialogOpen(true)}
-            className="w-full sm:w-auto"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <p className="text-muted-foreground">Loading leads...</p>
+          <div className="flex items-center justify-center py-16">
+            <div className="text-center space-y-3">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+              <p className="text-sm text-muted-foreground">Loading leads...</p>
+            </div>
           </div>
         ) : error ? (
-          <div className="rounded-lg border border-destructive bg-destructive/10 p-6">
+          <div className="rounded-xl border border-destructive/50 bg-destructive/5 p-8 text-center">
             <h3 className="text-lg font-semibold text-destructive mb-2">Error Loading Leads</h3>
-            <p className="text-sm text-muted-foreground mb-4">{error}</p>
+            <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">{error}</p>
             <Button
               onClick={() => window.location.reload()}
               variant="outline"
+              className="h-10"
             >
               Retry
             </Button>
           </div>
         ) : profile?.tenant_id === 'ffffffff-ffff-ffff-ffff-ffffffffffff' ? (
-          <div className="rounded-lg border bg-muted/50 p-6 text-center">
+          <div className="rounded-xl border border-border bg-muted/30 p-12 text-center">
             <h3 className="text-lg font-semibold mb-2">No Leads Available</h3>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
               You are currently assigned to the default tenant. Leads are only available for users assigned to specific tenant organizations. Please contact your administrator to be assigned to a tenant.
             </p>
           </div>
