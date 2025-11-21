@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { BarChart3, Loader2 } from "lucide-react";
+import { BarChart3, Loader2, Mail, CheckCircle2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const Login = () => {
@@ -14,6 +15,8 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"signin" | "signup">("signin");
+  const [showVerificationMessage, setShowVerificationMessage] = useState(false);
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
 
@@ -50,11 +53,18 @@ const Login = () => {
 
     try {
       await signUp(email, password, fullName, organizationName);
-      toast.success("Account created successfully! Please check your email to verify your account.");
-      // Switch to login tab after successful signup
+      // Signup successful - show success message and switch to login tab
+      toast.success("Account created successfully! Please check your email to verify your account before signing in.", {
+        duration: 10000, // Show for 10 seconds
+      });
+      // Clear form and switch to login tab
       setEmail("");
       setPassword("");
       setFullName("");
+      setActiveTab("signin");
+      setShowVerificationMessage(true);
+      // Hide message after 30 seconds
+      setTimeout(() => setShowVerificationMessage(false), 30000);
     } catch (error: any) {
       toast.error(error.message || "Failed to create account");
     } finally {
@@ -85,13 +95,29 @@ const Login = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
-            <Tabs defaultValue="signin" className="w-full">
+            <Tabs value={activeTab} onValueChange={(value) => {
+              setActiveTab(value as "signin" | "signup");
+              // Clear verification message when switching tabs
+              if (value === "signup") {
+                setShowVerificationMessage(false);
+              }
+            }} className="w-full">
               <TabsList className="grid w-full grid-cols-2 h-11 mb-6">
                 <TabsTrigger value="signin" className="text-sm font-medium">Sign In</TabsTrigger>
                 <TabsTrigger value="signup" className="text-sm font-medium">Sign Up</TabsTrigger>
               </TabsList>
 
               <TabsContent value="signin" className="space-y-5 mt-0">
+                {showVerificationMessage && (
+                  <Alert className="mb-4 border-primary/50 bg-primary/5">
+                    <CheckCircle2 className="h-4 w-4 text-primary" />
+                    <AlertTitle className="text-primary font-semibold">Account Created Successfully!</AlertTitle>
+                    <AlertDescription className="mt-2">
+                      Please check your email inbox and click the verification link to activate your account. 
+                      You must verify your email before you can sign in.
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <form onSubmit={handleSignIn} className="space-y-5">
                   <div className="space-y-2">
                     <Label htmlFor="signin-email" className="text-sm font-medium">Email</Label>

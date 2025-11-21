@@ -191,76 +191,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, fullName: string, organizationName: string) => {
-    // Sign up the user with organization name in metadata
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-          organization_name: organizationName,
-        },
+    // Call backend signup endpoint which handles tenant creation/assignment
+    // Backend uses service role key to bypass RLS and create tenants
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    
+    const response = await fetch(`${backendUrl}/api/signup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        email,
+        password,
+        full_name: fullName,
+        organization_name: organizationName,
+      }),
     });
 
-    if (authError) throw authError;
+    const data = await response.json();
 
-    if (!authData.user) {
-      throw new Error("User creation failed");
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to create account');
     }
 
-    // Extract email domain to match against tenant domains
-    const emailDomain = email.split('@')[1]?.toLowerCase();
-    
-    // Default tenant ID for new users without matching domain
-    const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
-    let tenantId = DEFAULT_TENANT_ID;
-    
-    if (emailDomain) {
-      // Try to find a tenant with matching domain
-      const { data: tenantData, error: tenantError } = await supabase
-        .from("tenants")
-        .select("id")
-        .eq("domain", emailDomain)
-        .maybeSingle();
-      
-      if (!tenantError && tenantData) {
-        tenantId = tenantData.id;
-      }
-    }
-
-    // Manually create user_profile with the assigned tenant_id
-    const { error: profileError } = await supabase
-      .from("user_profiles")
-      .insert({
-        id: authData.user.id,
-        email: email,
-        full_name: fullName,
-        tenant_id: tenantId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-
-    if (profileError) {
-      // If profile already exists (e.g., from a trigger), try to update it
-      const { error: updateError } = await supabase
-        .from("user_profiles")
-        .update({
-          tenant_id: tenantId,
-          email: email,
-          full_name: fullName,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", authData.user.id);
-
-      if (updateError) {
-        console.error("Error creating/updating user profile:", updateError);
-        throw new Error("Failed to create user profile");
-      }
-    }
-    
-    // Fetch the profile to verify it was created
-    await fetchUserProfile(authData.user.id);
+    // Backend has created the user and assigned tenant
+    // Note: Email verification is enabled, so user cannot sign in immediately
+    // They need to verify their email first via the link sent to their inbox
+    // We do NOT attempt to sign in here - user must verify email and sign in manually
   };
 
   const signOut = async () => {

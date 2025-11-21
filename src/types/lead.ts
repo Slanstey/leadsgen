@@ -7,6 +7,8 @@ export type LeadStatus =
   | "closed_lost"
   | "ignored";
 
+export type LeadTier = "good" | "medium" | "bad";
+
 export interface Lead {
   id: string;
   companyName: string;
@@ -14,10 +16,18 @@ export interface Lead {
   contactEmail: string;
   role: string;
   status: LeadStatus;
-  tier: number;
+  tier: LeadTier;
+  tierReason?: string;
+  warmConnections?: string;
   comments: Comment[];
   createdAt: Date;
   updatedAt: Date;
+  company?: {
+    industry?: string;
+    location?: string;
+    annualRevenue?: string;
+    description?: string;
+  };
 }
 
 export interface Comment {

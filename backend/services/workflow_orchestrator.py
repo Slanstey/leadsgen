@@ -56,7 +56,7 @@ class WorkflowOrchestrator:
         Args:
             methods: List of lead generation methods to use
             preferences: Tenant preferences dictionary
-            tenant_id: Tenant ID
+            tenant_id: Tenant ID (all users have a tenant now, including private tenants)
             max_results_per_method: Maximum results per method
             tenant_name: Name of the tenant/company
             admin_notes: Additional notes from admin dashboard
@@ -147,7 +147,7 @@ class WorkflowOrchestrator:
                 raise ValueError("Google Places service not initialized")
             
             # Build comprehensive query from all preferences
-            location = preferences.get("locations", "") or preferences.get("geographic_region", "")
+            location = preferences.get("locations", "")
             
             # Build query using all relevant preference fields
             query_parts = []
@@ -228,19 +228,9 @@ class WorkflowOrchestrator:
             if not self.linkedin_search_service:
                 raise ValueError("LinkedIn search service not initialized")
             
-            # Extract LinkedIn-specific preferences with fallbacks
-            locations_str = (
-                preferences.get("locations") or 
-                preferences.get("linkedin_locations") or 
-                preferences.get("geographic_region") or 
-                ""
-            )
-            positions_str = (
-                preferences.get("target_positions") or 
-                preferences.get("linkedin_positions") or 
-                preferences.get("target_roles") or 
-                ""
-            )
+            # Extract preferences from consolidated columns
+            locations_str = preferences.get("locations", "")
+            positions_str = preferences.get("target_positions", "")
             
             if not locations_str or not positions_str:
                 logger.warning("LinkedIn search requires locations and target_positions")
@@ -250,14 +240,8 @@ class WorkflowOrchestrator:
             locations = [loc.strip() for loc in locations_str.split(",") if loc.strip()]
             positions = [pos.strip() for pos in positions_str.split(",") if pos.strip()]
             
-            experience_operator = (
-                preferences.get("experience_operator") or 
-                preferences.get("linkedin_experience_operator", "=")
-            )
-            experience_years = (
-                preferences.get("experience_years") or 
-                preferences.get("linkedin_experience_years", 0)
-            )
+            experience_operator = preferences.get("experience_operator", "=")
+            experience_years = preferences.get("experience_years", 0)
             
             logger.info(f"LinkedIn search - locations: {locations}, positions: {positions}, experience: {experience_operator} {experience_years}")
             
@@ -302,8 +286,8 @@ class WorkflowOrchestrator:
         if target_industry:
             query_parts.append(target_industry)
         
-        # Add locations/geographic region
-        locations = preferences.get("locations", "") or preferences.get("geographic_region", "")
+        # Add locations
+        locations = preferences.get("locations", "")
         if locations:
             query_parts.append(locations)
         

@@ -20,7 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { LeadsTable } from "@/components/LeadsTable";
 import { ExportDialog } from "@/components/ExportDialog";
 import { CsvUploadDialog } from "@/components/CsvUploadDialog";
-import { Lead, LeadStatus } from "@/types/lead";
+import { Lead, LeadStatus, LeadTier } from "@/types/lead";
 
 interface TenantDetail {
   tenant: {
@@ -136,13 +136,13 @@ const AdminTenantDetail = () => {
         setFormData({
           targetIndustry: prefsData.target_industry || "",
           companySize: prefsData.company_size || "",
-          locations: prefsData.locations || prefsData.geographic_region || prefsData.linkedin_locations || "",
-          targetPositions: prefsData.target_positions || prefsData.target_roles || prefsData.linkedin_positions || "",
+          locations: prefsData.locations || "",
+          targetPositions: prefsData.target_positions || "",
           revenueRange: prefsData.revenue_range || "",
           keywords: prefsData.keywords || "",
           notes: prefsData.notes || "",
-          experienceOperator: prefsData.experience_operator || prefsData.linkedin_experience_operator || "=",
-          experienceYears: prefsData.experience_years || prefsData.linkedin_experience_years || 0,
+          experienceOperator: prefsData.experience_operator || "=",
+          experienceYears: prefsData.experience_years || 0,
           companyType: prefsData.company_type || "",
           technologyStack: prefsData.technology_stack || "",
           fundingStage: prefsData.funding_stage || "",
@@ -216,6 +216,29 @@ const AdminTenantDetail = () => {
         throw new Error(`Failed to fetch leads: ${leadsError.message}`);
       }
 
+      // Fetch companies for all unique company names
+      const uniqueCompanyNames = [...new Set((leadsData || []).map((lead: any) => lead.company_name))];
+      const companiesMap = new Map<string, { industry?: string; location?: string; annualRevenue?: string; description?: string }>();
+      
+      if (uniqueCompanyNames.length > 0) {
+        const { data: companiesData, error: companiesError } = await supabase
+          .from("companies")
+          .select("name, industry, location, annual_revenue, description")
+          .in("name", uniqueCompanyNames)
+          .eq("tenant_id", tenantId);
+
+        if (!companiesError && companiesData) {
+          companiesData.forEach((company: any) => {
+            companiesMap.set(company.name, {
+              industry: company.industry,
+              location: company.location,
+              annualRevenue: company.annual_revenue,
+              description: company.description,
+            });
+          });
+        }
+      }
+
       // Fetch comments for this tenant's leads
       const { data: commentsData, error: commentsError } = await supabase
         .from("comments")
@@ -228,8 +251,8 @@ const AdminTenantDetail = () => {
         // Don't throw, just log - leads can still be displayed without comments
       }
 
-      // Combine leads with their comments
-      const leadsWithComments: Lead[] = (leadsData || []).map((lead) => {
+      // Combine leads with their comments and company data
+      const leadsWithComments: Lead[] = (leadsData || []).map((lead: any) => {
         const leadComments = (commentsData || [])
           .filter((comment) => comment.lead_id === lead.id)
           .map((comment) => ({
@@ -246,10 +269,13 @@ const AdminTenantDetail = () => {
           contactEmail: lead.contact_email,
           role: lead.role,
           status: lead.status as LeadStatus,
-          tier: lead.tier || 1,
+          tier: (lead.tier as LeadTier) || "medium",
+          tierReason: lead.tier_reason,
+          warmConnections: lead.warm_connections,
           comments: leadComments,
           createdAt: new Date(lead.created_at || ""),
           updatedAt: new Date(lead.updated_at || ""),
+          company: companiesMap.get(lead.company_name) || undefined,
         };
       });
 

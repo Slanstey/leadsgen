@@ -192,39 +192,98 @@ export type Database = {
           },
         ]
       }
+      tenant_preferences: {
+        Row: {
+          company_size: string | null
+          company_type: string | null
+          created_at: string | null
+          experience_operator: string | null
+          experience_years: number | null
+          funding_stage: string | null
+          id: string
+          keywords: string | null
+          lead_generation_method: string[] | null
+          locations: string | null
+          notes: string | null
+          revenue_range: string | null
+          target_industry: string | null
+          target_positions: string | null
+          technology_stack: string | null
+          tenant_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          company_size?: string | null
+          company_type?: string | null
+          created_at?: string | null
+          experience_operator?: string | null
+          experience_years?: number | null
+          funding_stage?: string | null
+          id?: string
+          keywords?: string | null
+          lead_generation_method?: string[] | null
+          locations?: string | null
+          notes?: string | null
+          revenue_range?: string | null
+          target_industry?: string | null
+          target_positions?: string | null
+          technology_stack?: string | null
+          tenant_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          company_size?: string | null
+          company_type?: string | null
+          created_at?: string | null
+          experience_operator?: string | null
+          experience_years?: number | null
+          funding_stage?: string | null
+          id?: string
+          keywords?: string | null
+          lead_generation_method?: string[] | null
+          locations?: string | null
+          notes?: string | null
+          revenue_range?: string | null
+          target_industry?: string | null
+          target_positions?: string | null
+          technology_stack?: string | null
+          tenant_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_preferences_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
+          admin_notes: string | null
           created_at: string | null
           domain: string | null
           id: string
-          linkedin_experience_operator: string | null
-          linkedin_experience_years: number | null
-          linkedin_locations: string | null
-          linkedin_positions: string | null
           name: string
           slug: string
           updated_at: string | null
         }
         Insert: {
+          admin_notes?: string | null
           created_at?: string | null
           domain?: string | null
           id?: string
-          linkedin_experience_operator?: string | null
-          linkedin_experience_years?: number | null
-          linkedin_locations?: string | null
-          linkedin_positions?: string | null
           name: string
           slug: string
           updated_at?: string | null
         }
         Update: {
+          admin_notes?: string | null
           created_at?: string | null
           domain?: string | null
           id?: string
-          linkedin_experience_operator?: string | null
-          linkedin_experience_years?: number | null
-          linkedin_locations?: string | null
-          linkedin_positions?: string | null
           name?: string
           slug?: string
           updated_at?: string | null

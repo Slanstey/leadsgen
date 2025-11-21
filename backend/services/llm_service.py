@@ -288,7 +288,7 @@ Return ONLY the system prompt text, without any additional explanation or format
         """Build comprehensive prompt for LLM based on all preference fields"""
         # Extract all preference fields
         target_industry = preferences.get("target_industry", "")
-        locations = preferences.get("locations", "") or preferences.get("geographic_region", "")
+        locations = preferences.get("locations", "")
         company_type = preferences.get("company_type", "")
         keywords = preferences.get("keywords", "")
         company_size = preferences.get("company_size", "")
@@ -406,4 +406,139 @@ Make sure the JSON is valid and properly formatted. Include realistic details th
             logger.error(f"Error parsing LLM response: {e}")
         
         return leads
+    
+    def classify_lead(
+        self,
+        lead_data: Dict[str, Any],
+        company_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Classify a lead as good, medium, or bad and provide reasoning
+        
+        Args:
+            lead_data: Dictionary containing lead information (contact_person, contact_email, role, etc.)
+            company_data: Optional dictionary containing company information (industry, location, description, etc.)
+            
+        Returns:
+            Dictionary with 'tier' ('good', 'medium', or 'bad'), 'tier_reason' (string), and 'warm_connections' (string)
+        """
+        if not self.api_key:
+            logger.warning("OpenAI API key not configured. Skipping lead classification.")
+            return {
+                "tier": "medium",
+                "tier_reason": "Classification unavailable - API key not configured",
+                "warm_connections": ""
+            }
+        
+        try:
+            # Build classification prompt
+            prompt = self._build_classification_prompt(lead_data, company_data)
+            
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": self.system_prompt_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": """You are a lead qualification assistant. Analyze leads and classify them as "good", "medium", or "bad" based on their potential value. 
+
+Consider factors like:
+- Quality of contact information
+- Relevance of role and company
+- Company size and industry fit
+- Geographic location
+- Potential for warm connections (LinkedIn connections, mutual contacts, etc.)
+
+Return a JSON object with:
+- "tier": one of "good", "medium", or "bad"
+- "tier_reason": a brief explanation (1-2 sentences) of why this tier was assigned
+- "warm_connections": a comma-separated list of potential warm connection opportunities (e.g., "LinkedIn connection with John Doe, Mutual contact at Company XYZ, Same university alumni"). If none, return empty string."""
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "response_format": {"type": "json_object"},
+                "max_tokens": 500
+            }
+            
+            response = requests.post(
+                self.completions_url,
+                json=payload,
+                headers=headers,
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"OpenAI API error classifying lead: {response.status_code} - {response.text}")
+                return {
+                    "tier": "medium",
+                    "tier_reason": "Classification failed - API error",
+                    "warm_connections": ""
+                }
+            
+            data = response.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+            
+            classification = json.loads(content)
+            
+            # Validate tier value
+            tier = classification.get("tier", "medium").lower()
+            if tier not in ["good", "medium", "bad"]:
+                tier = "medium"
+            
+            return {
+                "tier": tier,
+                "tier_reason": classification.get("tier_reason", "No reason provided"),
+                "warm_connections": classification.get("warm_connections", "")
+            }
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse classification JSON response: {e}")
+            return {
+                "tier": "medium",
+                "tier_reason": "Classification failed - invalid response format",
+                "warm_connections": ""
+            }
+        except Exception as e:
+            logger.error(f"Error classifying lead: {e}")
+            return {
+                "tier": "medium",
+                "tier_reason": f"Classification failed - {str(e)}",
+                "warm_connections": ""
+            }
+    
+    def _build_classification_prompt(
+        self,
+        lead_data: Dict[str, Any],
+        company_data: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Build prompt for lead classification"""
+        parts = []
+        
+        # Lead information
+        parts.append("Lead Information:")
+        parts.append(f"- Contact Person: {lead_data.get('contact_person', 'Unknown')}")
+        parts.append(f"- Email: {lead_data.get('contact_email', 'Not provided')}")
+        parts.append(f"- Role: {lead_data.get('role', 'Unknown')}")
+        
+        # Company information
+        if company_data:
+            parts.append("\nCompany Information:")
+            parts.append(f"- Company Name: {company_data.get('name', 'Unknown')}")
+            parts.append(f"- Industry: {company_data.get('industry', 'Not specified')}")
+            parts.append(f"- Location: {company_data.get('location', 'Not specified')}")
+            parts.append(f"- Description: {company_data.get('description', 'Not provided')}")
+            parts.append(f"- Annual Revenue: {company_data.get('annual_revenue', 'Not specified')}")
+        else:
+            parts.append(f"\nCompany Name: {lead_data.get('company_name', 'Unknown')}")
+        
+        parts.append("\nPlease classify this lead and provide reasoning.")
+        
+        return "\n".join(parts)
 

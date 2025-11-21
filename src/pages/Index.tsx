@@ -39,10 +39,7 @@ const Index = () => {
 
   // Fetch leads from database
   const fetchLeads = useCallback(async () => {
-    const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
-    
-    // Don't fetch leads for default tenant users
-    if (!profile?.tenant_id || profile.tenant_id === DEFAULT_TENANT_ID) {
+    if (!profile?.id) {
       setLeads([]);
       setLoading(false);
       return;
@@ -60,10 +57,11 @@ const Index = () => {
         throw new Error("Supabase environment variables are not configured. Please check your .env file.");
       }
 
-      // Fetch leads (RLS will automatically filter by tenant_id)
+      // Fetch leads for user's tenant (all users now have a tenant_id)
       const { data: leadsData, error: leadsError } = await supabase
         .from("leads")
         .select("*")
+        .eq("tenant_id", profile.tenant_id)
         .order("created_at", { ascending: false });
 
       if (leadsError) {
@@ -71,10 +69,33 @@ const Index = () => {
         throw new Error(`Failed to fetch leads: ${leadsError.message}`);
       }
 
-      // Fetch comments for all leads
+      // Fetch companies for all unique company names
+      const uniqueCompanyNames = [...new Set((leadsData || []).map((lead: any) => lead.company_name))];
+      const companiesMap = new Map<string, { industry?: string; location?: string; annualRevenue?: string; description?: string }>();
+      
+      if (uniqueCompanyNames.length > 0) {
+        const { data: companiesData, error: companiesError } = await supabase
+          .from("companies")
+          .select("name, industry, location, annual_revenue, description")
+          .in("name", uniqueCompanyNames);
+
+        if (!companiesError && companiesData) {
+          companiesData.forEach((company: any) => {
+            companiesMap.set(company.name, {
+              industry: company.industry,
+              location: company.location,
+              annualRevenue: company.annual_revenue,
+              description: company.description,
+            });
+          });
+        }
+      }
+
+      // Fetch comments for all leads (filtered by tenant_id)
       const { data: commentsData, error: commentsError } = await supabase
         .from("comments")
         .select("*")
+        .eq("tenant_id", profile.tenant_id)
         .order("created_at", { ascending: true });
 
       if (commentsError) {
@@ -82,8 +103,8 @@ const Index = () => {
         throw new Error(`Failed to fetch comments: ${commentsError.message}`);
       }
 
-      // Combine leads with their comments
-      const leadsWithComments: Lead[] = (leadsData || []).map((lead) => {
+      // Combine leads with their comments and company data
+      const leadsWithComments: Lead[] = (leadsData || []).map((lead: any) => {
         const leadComments: Comment[] = (commentsData || [])
           .filter((comment) => comment.lead_id === lead.id)
           .map((comment) => ({
@@ -100,10 +121,13 @@ const Index = () => {
           contactEmail: lead.contact_email,
           role: lead.role,
           status: lead.status as LeadStatus,
-          tier: lead.tier || 1,
+          tier: (lead.tier as LeadTier) || "medium",
+          tierReason: lead.tier_reason,
+          warmConnections: lead.warm_connections,
           comments: leadComments,
           createdAt: new Date(lead.created_at || ""),
           updatedAt: new Date(lead.updated_at || ""),
+          company: companiesMap.get(lead.company_name) || undefined,
         };
       });
 
@@ -120,15 +144,14 @@ const Index = () => {
   }, [profile?.tenant_id]);
 
   useEffect(() => {
-    const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
-    // Only fetch leads if user has a tenant and it's not the default tenant
-    if (profile?.tenant_id && profile.tenant_id !== DEFAULT_TENANT_ID) {
+    // Fetch leads for user's tenant (all users have tenant_id now)
+    if (profile?.tenant_id) {
       fetchLeads();
     } else {
       setLeads([]);
       setLoading(false);
     }
-  }, [profile?.tenant_id]); // Only depend on tenant_id, not fetchLeads
+  }, [profile?.tenant_id]);
 
   // Refetch when navigating back to this page
   useEffect(() => {
@@ -423,11 +446,13 @@ const Index = () => {
               Retry
             </Button>
           </div>
-        ) : profile?.tenant_id === 'ffffffff-ffff-ffff-ffff-ffffffffffff' ? (
+        ) : leads.length === 0 ? (
           <div className="rounded-xl border border-border bg-muted/30 p-12 text-center">
             <h3 className="text-lg font-semibold mb-2">No Leads Available</h3>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              You are currently assigned to the default tenant. Leads are only available for users assigned to specific tenant organizations. Please contact your administrator to be assigned to a tenant.
+              {profile?.tenant_id 
+                ? "You don't have any leads yet. Generate leads using the search tools above."
+                : "You don't have any leads yet. Generate leads using the search tools above."}
             </p>
           </div>
         ) : (

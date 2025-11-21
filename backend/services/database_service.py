@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 from supabase import Client
 import logging
 from datetime import datetime
+from utils.location_utils import extract_city_country
 
 logger = logging.getLogger(__name__)
 
@@ -13,14 +14,16 @@ logger = logging.getLogger(__name__)
 class DatabaseService:
     """Service for database operations on leads and companies"""
     
-    def __init__(self, supabase_client: Client):
+    def __init__(self, supabase_client: Client, llm_service: Optional[Any] = None):
         """
         Initialize the database service
         
         Args:
             supabase_client: Supabase client instance
+            llm_service: Optional LLM service instance for lead classification
         """
         self.supabase = supabase_client
+        self.llm_service = llm_service
     
     def save_leads_and_companies(
         self,
@@ -32,7 +35,7 @@ class DatabaseService:
         
         Args:
             leads_data: List of lead dictionaries
-            tenant_id: Tenant ID
+            tenant_id: Tenant ID (all users have a tenant now, including private tenants)
             
         Returns:
             Dictionary with counts of leads_created and companies_created
@@ -98,10 +101,14 @@ class DatabaseService:
                 return existing.data[0]["id"]
             
             # Create new company
+            # Extract city and country from address
+            address = company_data.get("address", "")
+            location = extract_city_country(address) if address else ""
+            
             company_insert = {
                 "tenant_id": tenant_id,
                 "name": company_name,
-                "location": company_data.get("address", ""),
+                "location": location,
                 "industry": company_data.get("industry", "Unknown"),
                 "sub_industry": company_data.get("sub_industry", ""),
                 "annual_revenue": company_data.get("annual_revenue", ""),
@@ -142,7 +149,32 @@ class DatabaseService:
                     # Lead already exists, skip
                     return None
             
-            # Create new lead
+            # Get company data for classification
+            company_data = None
+            if company_name:
+                company_result = self.supabase.table("companies").select("*").eq(
+                    "tenant_id", tenant_id
+                ).eq("name", company_name).limit(1).execute()
+                
+                if company_result.data and len(company_result.data) > 0:
+                    company_data = company_result.data[0]
+            
+            # Classify lead using LLM if available
+            tier = "medium"
+            tier_reason = ""
+            warm_connections = ""
+            
+            if self.llm_service:
+                try:
+                    classification = self.llm_service.classify_lead(lead_data, company_data)
+                    tier = classification.get("tier", "medium")
+                    tier_reason = classification.get("tier_reason", "")
+                    warm_connections = classification.get("warm_connections", "")
+                except Exception as e:
+                    logger.error(f"Error classifying lead: {e}")
+                    # Continue with default values
+            
+            # Create new lead (all users have tenant_id now)
             lead_insert = {
                 "tenant_id": tenant_id,
                 "company_name": company_name,
@@ -150,7 +182,9 @@ class DatabaseService:
                 "contact_email": lead_data.get("contact_email", ""),
                 "role": lead_data.get("role", ""),
                 "status": "not_contacted",
-                "tier": 1,
+                "tier": tier,
+                "tier_reason": tier_reason,
+                "warm_connections": warm_connections,
                 "created_at": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat()
             }

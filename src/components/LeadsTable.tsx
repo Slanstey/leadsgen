@@ -18,11 +18,13 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { MessageSquare, X, Send, Mail } from "lucide-react";
+import { MessageSquare, X, Send, Mail, MapPin, Building2, ArrowUpDown, ArrowUp, ArrowDown, MessageSquareText } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TierBadge } from "@/components/TierBadge";
 import { toast } from "sonner";
 import { EmailDialog } from "@/components/EmailDialog";
+import { FeedbackDialog } from "@/components/FeedbackDialog";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface LeadsTableProps {
   leads: Lead[];
@@ -30,12 +32,19 @@ interface LeadsTableProps {
   onAddComment: (leadId: string, comment: string) => void;
 }
 
+type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "createdAt" | null;
+type SortDirection = "asc" | "desc" | null;
+
 export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTableProps) {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [commentingLead, setCommentingLead] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [sortColumn, setSortColumn] = useState<SortColumn>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
 
   const isNewLead = (lead: Lead): boolean => {
     const threeDaysAgo = new Date();
@@ -68,6 +77,106 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
     }
   };
 
+  const handleOpenFeedbackDialog = (lead: Lead) => {
+    setSelectedLead(lead);
+    setFeedbackDialogOpen(true);
+  };
+
+  const handleFeedbackSubmit = (quality: "good" | "bad", reason: string) => {
+    if (!selectedLead) return;
+
+    const userName = profile?.full_name || profile?.email || "Current User";
+    const qualityText = quality === "good" ? "good" : "bad";
+    const commentText = `Marked as ${qualityText} lead by ${userName}. Reason: ${reason}`;
+
+    onAddComment(selectedLead.id, commentText);
+    toast.success(`Lead marked as ${qualityText} quality`);
+  };
+
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      // Cycle through: unsorted -> asc -> desc -> unsorted
+      if (sortDirection === null) {
+        setSortDirection("asc");
+      } else if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else {
+        // desc -> unsorted
+        setSortColumn(null);
+        setSortDirection(null);
+      }
+    } else {
+      // Set new column and start with ascending
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  };
+
+  const sortedLeads = [...leads].sort((a, b) => {
+    // If no sort column, default to newest first (createdAt desc)
+    if (!sortColumn || sortDirection === null) {
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    }
+
+    let aValue: any;
+    let bValue: any;
+
+    switch (sortColumn) {
+      case "companyName":
+        aValue = a.companyName.toLowerCase();
+        bValue = b.companyName.toLowerCase();
+        break;
+      case "contactPerson":
+        aValue = a.contactPerson.toLowerCase();
+        bValue = b.contactPerson.toLowerCase();
+        break;
+      case "contactEmail":
+        aValue = (a.contactEmail || "").toLowerCase();
+        bValue = (b.contactEmail || "").toLowerCase();
+        break;
+      case "role":
+        aValue = a.role.toLowerCase();
+        bValue = b.role.toLowerCase();
+        break;
+      case "tier":
+        aValue = a.tier;
+        bValue = b.tier;
+        break;
+      case "status":
+        aValue = a.status;
+        bValue = b.status;
+        break;
+      case "createdAt":
+        aValue = a.createdAt.getTime();
+        bValue = b.createdAt.getTime();
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) {
+      return sortDirection === "asc" ? -1 : 1;
+    }
+    if (aValue > bValue) {
+      return sortDirection === "asc" ? 1 : -1;
+    }
+    return 0;
+  });
+
+  const SortIcon = ({ column }: { column: SortColumn }) => {
+    if (sortColumn !== column) {
+      return <ArrowUpDown className="h-3.5 w-3.5 ml-1 opacity-50" />;
+    }
+    if (sortDirection === null) {
+      return <ArrowUpDown className="h-3.5 w-3.5 ml-1 opacity-50" />;
+    }
+    return sortDirection === "asc" ? (
+      <ArrowUp className="h-3.5 w-3.5 ml-1" />
+    ) : (
+      <ArrowDown className="h-3.5 w-3.5 ml-1" />
+    );
+  };
+
   if (leads.length === 0) {
     return (
       <div className="rounded-xl border border-border/50 bg-card p-16 text-center shadow-soft">
@@ -83,18 +192,67 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
         <Table>
           <TableHeader>
             <TableRow className="border-b-2 border-border/60 hover:bg-transparent">
-              <TableHead className="h-14 font-semibold text-sm">Company</TableHead>
-              <TableHead className="h-14 font-semibold text-sm">Contact Person</TableHead>
-              <TableHead className="h-14 font-semibold text-sm">Email</TableHead>
-              <TableHead className="h-14 font-semibold text-sm">Role</TableHead>
-              <TableHead className="h-14 font-semibold text-sm">Tier</TableHead>
-              <TableHead className="h-14 font-semibold text-sm">Status</TableHead>
-              <TableHead className="h-14 font-semibold text-sm">Comments</TableHead>
+              <TableHead 
+                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => handleSort("companyName")}
+              >
+                <div className="flex items-center">
+                  Company
+                  <SortIcon column="companyName" />
+                </div>
+              </TableHead>
+              <TableHead className="h-14 font-semibold text-sm min-w-[200px] max-w-[250px]">Details</TableHead>
+              <TableHead 
+                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => handleSort("contactPerson")}
+              >
+                <div className="flex items-center">
+                  Contact Person
+                  <SortIcon column="contactPerson" />
+                </div>
+              </TableHead>
+              <TableHead 
+                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[180px]"
+                onClick={() => handleSort("contactEmail")}
+              >
+                <div className="flex items-center">
+                  Email
+                  <SortIcon column="contactEmail" />
+                </div>
+              </TableHead>
+              <TableHead 
+                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => handleSort("role")}
+              >
+                <div className="flex items-center">
+                  Role
+                  <SortIcon column="role" />
+                </div>
+              </TableHead>
+              <TableHead 
+                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[100px]"
+                onClick={() => handleSort("tier")}
+              >
+                <div className="flex items-center">
+                  Tier
+                  <SortIcon column="tier" />
+                </div>
+              </TableHead>
+              <TableHead 
+                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[140px]"
+                onClick={() => handleSort("status")}
+              >
+                <div className="flex items-center">
+                  Status
+                  <SortIcon column="status" />
+                </div>
+              </TableHead>
+              <TableHead className="h-14 font-semibold text-sm min-w-[150px] max-w-[200px]">Warm Connections</TableHead>
               <TableHead className="h-14 font-semibold text-sm text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {leads.map((lead, index) => (
+            {sortedLeads.map((lead, index) => (
               <Fragment key={lead.id}>
                 <TableRow 
                   className={`group border-b border-border/50 hover:bg-success/8 hover:border-success/40 transition-all duration-200 cursor-pointer ${
@@ -110,16 +268,41 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                     </button>
                   </TableCell>
                   <TableCell className="py-5 px-4">
-                    <span className="text-sm">{lead.contactPerson}</span>
+                    <div className="flex flex-col gap-1.5 min-w-[200px] max-w-[250px]">
+                      {lead.company?.description && (
+                        <span className="inline-flex items-start gap-1 px-2 py-1 rounded-md bg-muted/60 text-muted-foreground text-xs line-clamp-2 leading-relaxed">
+                          {lead.company.description}
+                        </span>
+                      )}
+                      {lead.company && (lead.company.industry || lead.company.location) && (
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                          {lead.company.industry && lead.company.industry !== "Unknown" && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground">
+                              <Building2 className="h-3 w-3 flex-shrink-0" />
+                              <span className="truncate max-w-[120px]">{lead.company.industry}</span>
+                            </span>
+                          )}
+                          {lead.company.location && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground">
+                              <MapPin className="h-3 w-3 flex-shrink-0" />
+                              <span className="truncate max-w-[120px]">{lead.company.location}</span>
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="py-5 px-4">
+                    <span className="text-sm">{lead.contactPerson}</span>
+                  </TableCell>
+                  <TableCell className="py-5 px-4 w-[180px]">
                     {lead.contactEmail ? (
                       <a 
                         href={`mailto:${lead.contactEmail}`}
                         className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5 group/email"
                       >
-                        <Mail className="h-3.5 w-3.5 opacity-60 group-hover/email:opacity-100 group-hover/email:text-primary transition-all" />
-                        <span className="hover:underline">{lead.contactEmail}</span>
+                        <Mail className="h-3.5 w-3.5 opacity-60 group-hover/email:opacity-100 group-hover/email:text-primary transition-all flex-shrink-0" />
+                        <span className="hover:underline truncate">{lead.contactEmail}</span>
                       </a>
                     ) : (
                       <span className="text-sm text-muted-foreground/50 italic">No email</span>
@@ -128,15 +311,15 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                   <TableCell className="py-5 px-4">
                     <span className="text-sm">{lead.role}</span>
                   </TableCell>
-                  <TableCell className="py-5 px-4">
+                  <TableCell className="py-5 px-4 w-[100px]">
                     <TierBadge tier={lead.tier} />
                   </TableCell>
-                  <TableCell className="py-5 px-4">
+                  <TableCell className="py-5 px-4 w-[140px]">
                     <Select
                       value={lead.status}
                       onValueChange={(value) => onStatusChange(lead.id, value as LeadStatus)}
                     >
-                      <SelectTrigger className="w-[160px] h-9 border-border/50">
+                      <SelectTrigger className="w-[130px] h-9 border-border/50">
                         <SelectValue>
                           <StatusBadge status={lead.status} />
                         </SelectValue>
@@ -152,21 +335,14 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                       </SelectContent>
                     </Select>
                   </TableCell>
-                  <TableCell className="py-5 px-4">
-                    <div className="flex items-center gap-2">
-                      <MessageSquare className={`h-4 w-4 transition-colors ${
-                        lead.comments.length > 0 
-                          ? "text-primary opacity-70" 
-                          : "text-muted-foreground opacity-40"
-                      }`} />
-                      <span className={`text-sm ${
-                        lead.comments.length > 0 
-                          ? "text-foreground font-medium" 
-                          : "text-muted-foreground"
-                      }`}>
-                        {lead.comments.length}
+                  <TableCell className="py-5 px-4 min-w-[150px] max-w-[200px]">
+                    {lead.warmConnections ? (
+                      <span className="text-xs text-muted-foreground block line-clamp-2">
+                        {lead.warmConnections}
                       </span>
-                    </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground/50 italic">None</span>
+                    )}
                   </TableCell>
                   <TableCell className="py-5 px-4 text-right">
                     <div className="flex justify-end gap-2">
@@ -182,9 +358,18 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                       <Button
                         variant="ghost"
                         size="sm"
+                        onClick={() => handleOpenFeedbackDialog(lead)}
+                        title="Provide Feedback"
+                        className="h-9 w-9 p-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-200"
+                      >
+                        <MessageSquareText className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => setCommentingLead(commentingLead === lead.id ? null : lead.id)}
                         title={commentingLead === lead.id ? "Close Comments" : "View/Add Comments"}
-                        className={`h-9 w-9 p-0 transition-all duration-200 ${
+                        className={`h-9 w-9 p-0 relative transition-all duration-200 ${
                           commentingLead === lead.id
                             ? "text-success bg-success/10"
                             : lead.comments.length > 0
@@ -195,7 +380,14 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                         {commentingLead === lead.id ? (
                           <X className="h-4 w-4" />
                         ) : (
-                          <MessageSquare className="h-4 w-4" />
+                          <>
+                            <MessageSquare className="h-4 w-4" />
+                            {lead.comments.length > 0 && (
+                              <span className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[10px] font-semibold text-primary-foreground bg-primary rounded-full">
+                                {lead.comments.length}
+                              </span>
+                            )}
+                          </>
                         )}
                       </Button>
                     </div>
@@ -203,7 +395,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                 </TableRow>
                 {commentingLead === lead.id && (
                   <TableRow>
-                    <TableCell colSpan={8} className="bg-success/5 p-6 border-b border-border/50">
+                    <TableCell colSpan={9} className="bg-success/5 p-6 border-b border-border/50">
                       <div className="space-y-4">
                         {lead.comments.length > 0 && (
                           <div className="space-y-3">
@@ -245,15 +437,24 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
       </div>
 
       {selectedLead && (
-        <EmailDialog
-          open={emailDialogOpen}
-          onOpenChange={setEmailDialogOpen}
-          companyName={selectedLead.companyName}
-          contactPerson={selectedLead.contactPerson}
-          contactEmail={selectedLead.contactEmail}
-          role={selectedLead.role}
-          onEmailSent={handleEmailSent}
-        />
+        <>
+          <EmailDialog
+            open={emailDialogOpen}
+            onOpenChange={setEmailDialogOpen}
+            companyName={selectedLead.companyName}
+            contactPerson={selectedLead.contactPerson}
+            contactEmail={selectedLead.contactEmail}
+            role={selectedLead.role}
+            onEmailSent={handleEmailSent}
+          />
+          <FeedbackDialog
+            open={feedbackDialogOpen}
+            onOpenChange={setFeedbackDialogOpen}
+            companyName={selectedLead.companyName}
+            contactPerson={selectedLead.contactPerson}
+            onFeedbackSubmit={handleFeedbackSubmit}
+          />
+        </>
       )}
     </div>
   );

@@ -157,6 +157,11 @@ const CompanyDetail = () => {
                 <CardTitle>Company Overview</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {company.description && (
+                  <div className="pb-4 border-b border-border/50">
+                    <p className="text-sm leading-relaxed text-foreground">{company.description}</p>
+                  </div>
+                )}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="flex gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
