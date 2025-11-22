@@ -32,7 +32,7 @@ interface LeadsTableProps {
   onAddComment: (leadId: string, comment: string) => void;
 }
 
-type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "createdAt" | null;
+type SortColumn = "companyName" | "contactPerson" | "role" | "tier" | "status" | "createdAt" | null;
 type SortDirection = "asc" | "desc" | null;
 
 export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTableProps) {
@@ -130,10 +130,6 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
         aValue = a.contactPerson.toLowerCase();
         bValue = b.contactPerson.toLowerCase();
         break;
-      case "contactEmail":
-        aValue = (a.contactEmail || "").toLowerCase();
-        bValue = (b.contactEmail || "").toLowerCase();
-        break;
       case "role":
         aValue = a.role.toLowerCase();
         bValue = b.role.toLowerCase();
@@ -202,22 +198,13 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                 </div>
               </TableHead>
               <TableHead className="h-14 font-semibold text-sm min-w-[200px] max-w-[250px]">Details</TableHead>
-              <TableHead 
+              <TableHead
                 className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => handleSort("contactPerson")}
               >
                 <div className="flex items-center">
                   Contact Person
                   <SortIcon column="contactPerson" />
-                </div>
-              </TableHead>
-              <TableHead 
-                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[180px]"
-                onClick={() => handleSort("contactEmail")}
-              >
-                <div className="flex items-center">
-                  Email
-                  <SortIcon column="contactEmail" />
                 </div>
               </TableHead>
               <TableHead 
@@ -294,19 +281,6 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                   </TableCell>
                   <TableCell className="py-5 px-4">
                     <span className="text-sm">{lead.contactPerson}</span>
-                  </TableCell>
-                  <TableCell className="py-5 px-4 w-[180px]">
-                    {lead.contactEmail ? (
-                      <a 
-                        href={`mailto:${lead.contactEmail}`}
-                        className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5 group/email"
-                      >
-                        <Mail className="h-3.5 w-3.5 opacity-60 group-hover/email:opacity-100 group-hover/email:text-primary transition-all flex-shrink-0" />
-                        <span className="hover:underline truncate">{lead.contactEmail}</span>
-                      </a>
-                    ) : (
-                      <span className="text-sm text-muted-foreground/50 italic">No email</span>
-                    )}
                   </TableCell>
                   <TableCell className="py-5 px-4">
                     <span className="text-sm">{lead.role}</span>

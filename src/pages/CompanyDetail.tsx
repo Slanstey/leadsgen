@@ -2,31 +2,20 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Building2, MapPin, DollarSign, Briefcase, User, Loader2 } from "lucide-react";
+import { ArrowLeft, Building2, MapPin, Briefcase, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Company = Tables<"companies">;
-type Executive = Tables<"executives">;
-type NewsItem = {
-  id: string;
-  title: string;
-  date: string;
-  source: string;
-  summary: string;
-};
 
 const CompanyDetail = () => {
   const { companyName } = useParams<{ companyName: string }>();
   const navigate = useNavigate();
   const { profile } = useAuth();
   const [company, setCompany] = useState<Company | null>(null);
-  const [executives, setExecutives] = useState<Executive[]>([]);
-  const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newsLoading, setNewsLoading] = useState(false);
   
   const decodedName = decodeURIComponent(companyName || "");
 
@@ -66,20 +55,6 @@ const CompanyDetail = () => {
         }
 
         setCompany(companyData);
-
-        // Fetch executives for this company
-        const { data: executivesData, error: executivesError } = await supabase
-          .from("executives")
-          .select("*")
-          .eq("company_id", companyData.id)
-          .order("name");
-
-        if (!executivesError && executivesData) {
-          setExecutives(executivesData);
-        }
-
-        // Fetch news using LLM
-        await fetchNewsWithLLM(decodedName);
       } catch (error) {
         console.error("Error fetching company data:", error);
         toast.error("Failed to load company information");
@@ -90,21 +65,6 @@ const CompanyDetail = () => {
 
     fetchCompanyData();
   }, [decodedName, profile?.tenant_id]);
-
-  const fetchNewsWithLLM = async (companyName: string) => {
-    try {
-      setNewsLoading(true);
-      
-      // News fetching functionality removed - edge function no longer available
-      // Can be reimplemented later if needed
-      setNews([]);
-    } catch (error) {
-      console.error("Error in news fetch:", error);
-      setNews([]);
-    } finally {
-      setNewsLoading(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -150,8 +110,8 @@ const CompanyDetail = () => {
       </header>
 
       <main className="container mx-auto px-6 py-8">
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid gap-6">
+          <div className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Company Overview</CardTitle>
@@ -174,15 +134,6 @@ const CompanyDetail = () => {
                   </div>
                   <div className="flex gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                      <DollarSign className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Annual Revenue</p>
-                      <p className="font-medium">{company.annual_revenue}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
                       <Briefcase className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div>
@@ -190,71 +141,10 @@ const CompanyDetail = () => {
                       <p className="font-medium">{company.industry}</p>
                     </div>
                   </div>
-                  <div className="flex gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                      <Building2 className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Sub-Industry</p>
-                      <p className="font-medium">{company.sub_industry}</p>
-                    </div>
-                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Latest News</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {newsLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    <span className="ml-2 text-muted-foreground">Fetching latest news...</span>
-                  </div>
-                ) : news.length > 0 ? (
-                  news.map((item) => (
-                    <div key={item.id} className="border-l-4 border-primary pl-4 py-2">
-                      <h3 className="font-semibold mb-1">{item.title}</h3>
-                      <p className="text-sm text-muted-foreground mb-2">{item.summary}</p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{item.source}</span>
-                        <span>•</span>
-                        <span>{new Date(item.date).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-muted-foreground">No recent news available</p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div>
-            <Card>
-              <CardHeader>
-                <CardTitle>Key Executives</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {executives.length > 0 ? (
-                  executives.map((exec) => (
-                    <div key={exec.id} className="flex gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-                        <User className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="font-medium">{exec.name}</p>
-                        <p className="text-sm text-muted-foreground">{exec.title}</p>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-muted-foreground">No executives listed</p>
-                )}
-              </CardContent>
-            </Card>
           </div>
         </div>
       </main>
