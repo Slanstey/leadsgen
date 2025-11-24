@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // If we already have the profile for this user, don't fetch again
-    if (currentProfileIdRef.current === userId && currentUserIdRef.current === userId) {
+    if ((currentProfileIdRef.current === userId && currentUserIdRef.current === userId) || !userId) {
       // Ensure loading is false since we already have the profile
       setLoading(false);
       return;
@@ -50,38 +50,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(true);
       }
 
-      // Use longer timeout in production to account for Supabase session recovery
-      // Session recovery can take 10-20+ seconds on first load in production
-      const timeoutDuration = 30000
-      let timeoutId: NodeJS.Timeout | null = null;
-      let timeoutResolved = false;
-
-      const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) => {
-        timeoutId = setTimeout(() => {
-          if (!timeoutResolved) {
-            timeoutResolved = true;
-            console.error(`Profile fetch timeout after ${timeoutDuration}ms`);
-            resolve({ data: null, error: new Error('Profile fetch timeout') });
-          }
-        }, timeoutDuration);
-      });
-
       const fetchPromise = supabase
         .from("user_profiles")
         .select("*")
         .eq("id", userId)
         .single();
 
-      const result = await Promise.race([fetchPromise, timeoutPromise]);
-
-      // Clear timeout if query completed successfully
-      if (timeoutId && !timeoutResolved) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-        timeoutResolved = true;
-      }
-
-      const { data, error } = result;
+      const { data, error } = await fetchPromise;
 
       if (error) {
         console.error("Error fetching user profile:", error);
@@ -113,50 +88,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    // Get initial session - use longer timeout in production for session recovery
-    const getSessionWithTimeout = async () => {
-      const sessionTimeout = import.meta.env.PROD ? 20000 : 5000; // 20s prod, 5s dev
+    // Get initial session
+    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
+      if (!mounted) return;
 
-      try {
-        const sessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Session fetch timeout')), sessionTimeout)
-        );
-
-        const result = await Promise.race([sessionPromise, timeoutPromise]) as any;
-        const { data: { session }, error } = result;
-
-        if (!mounted) return;
-
-        if (error) {
-          console.error("Error getting session:", error);
-          setLoading(false);
-          return;
-        }
-
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          currentUserIdRef.current = session.user.id;
-          // Small delay to ensure session is fully initialized (helps with production session recovery)
-          await new Promise(resolve => setTimeout(resolve, import.meta.env.PROD ? 500 : 0));
-          await fetchUserProfile(session.user.id);
-        } else {
-          setLoading(false);
-          currentUserIdRef.current = null;
-          currentProfileIdRef.current = null;
-        }
-      } catch (error) {
-        console.error("Error in getSession:", error);
-        if (mounted) {
-          setLoading(false);
-          currentUserIdRef.current = null;
-          currentProfileIdRef.current = null;
-        }
+      if (error) {
+        console.error("Error getting session:", error);
+        setLoading(false);
+        return;
       }
-    };
 
-    getSessionWithTimeout();
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        currentUserIdRef.current = session.user.id;
+        await fetchUserProfile(session.user.id);
+      } else {
+        setLoading(false);
+        currentUserIdRef.current = null;
+        currentProfileIdRef.current = null;
+      }
+    }).catch((error) => {
+      console.error("Error in getSession:", error);
+      if (mounted) {
+        setLoading(false);
+        currentUserIdRef.current = null;
+        currentProfileIdRef.current = null;
+      }
+    });
 
     // Listen for auth changes
     const {
