@@ -27,13 +27,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchInProgressRef = useRef(false);
 
   const fetchUserProfile = async (userId: string) => {
+    console.log('[AuthContext] fetchUserProfile called', {
+      userId,
+      fetchInProgress: fetchInProgressRef.current,
+      currentUserId: currentUserIdRef.current,
+      currentProfileId: currentProfileIdRef.current,
+    });
+
     // Prevent concurrent fetches for the same user
     if (fetchInProgressRef.current && currentUserIdRef.current === userId) {
+      console.log('[AuthContext] Fetch already in progress for this user, skipping');
       return;
     }
 
     // If we already have the profile for this user, don't fetch again
     if (currentProfileIdRef.current === userId && currentUserIdRef.current === userId) {
+      console.log('[AuthContext] Profile already loaded for this user, skipping fetch');
       // Ensure loading is false since we already have the profile
       setLoading(false);
       return;
@@ -50,9 +59,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(true);
       }
       
+      console.log('[AuthContext] Starting profile fetch', {
+        userId,
+        shouldShowLoading,
+      });
+      
       // Add timeout to prevent infinite loading
       const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) => 
-        setTimeout(() => resolve({ data: null, error: new Error('Profile fetch timeout') }), 10000)
+        setTimeout(() => {
+          console.error('[AuthContext] Profile fetch timeout after 10 seconds');
+          resolve({ data: null, error: new Error('Profile fetch timeout') });
+        }, 10000)
       );
       
       const fetchPromise = supabase
@@ -65,7 +82,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = result;
 
       if (error) {
-        console.error("Error fetching user profile:", error);
+        console.error("[AuthContext] Error fetching user profile:", {
+          error,
+          errorMessage: error.message,
+          errorCode: (error as any).code,
+          errorDetails: (error as any).details,
+          userId,
+        });
         // Don't set profile if there's an error, but stop loading
         setProfile(null);
         currentProfileIdRef.current = null;
@@ -74,19 +97,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       if (data) {
+        console.log('[AuthContext] Profile fetched successfully', {
+          userId: data.id,
+          hasLinkedInId: !!data.linkedin_profile_id,
+        });
         setProfile(data);
         currentProfileIdRef.current = data.id;
       } else {
+        console.warn('[AuthContext] Profile fetch returned no data', { userId });
         setProfile(null);
         currentProfileIdRef.current = null;
       }
     } catch (error) {
-      console.error("Error fetching user profile:", error);
+      console.error("[AuthContext] Exception fetching user profile:", {
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        userId,
+      });
       setProfile(null);
       currentProfileIdRef.current = null;
     } finally {
       setLoading(false);
       fetchInProgressRef.current = false;
+      console.log('[AuthContext] Profile fetch completed', { userId });
     }
   };
 

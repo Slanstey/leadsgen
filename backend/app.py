@@ -306,36 +306,50 @@ def verify_admin(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
 
 def verify_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     """Verify JWT token and return user info without requiring tenant_id"""
+    logger.debug("[verify_user] Starting user verification")
+    
     if not authorization:
+        logger.warning("[verify_user] Authorization header missing")
         raise HTTPException(status_code=401, detail="Authorization header required")
     
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    logger.debug(f"[verify_user] Token extracted - length: {len(token)}")
     
     try:
         # Use anon key client for auth verification (validates user sessions properly)
+        logger.debug("[verify_user] Calling supabase_auth.auth.get_user")
         response = supabase_auth.auth.get_user(token)
         
         if not response.user:
+            logger.warning("[verify_user] Supabase auth.get_user returned no user")
             raise HTTPException(status_code=401, detail="Invalid token")
         
+        logger.info(f"[verify_user] User authenticated - user_id: {response.user.id}")
+        
         # Use service role client for database queries (bypasses RLS)
+        logger.debug(f"[verify_user] Fetching user profile from database - user_id: {response.user.id}")
         profile_result = supabase.table("user_profiles").select("tenant_id").eq("id", response.user.id).limit(1).execute()
         
         if not profile_result.data or len(profile_result.data) == 0:
+            logger.error(f"[verify_user] User profile not found in database - user_id: {response.user.id}")
             raise HTTPException(
                 status_code=404,
                 detail="User profile not found. Please complete your profile setup in the application."
             )
         
+        tenant_id = profile_result.data[0].get("tenant_id")
+        logger.info(f"[verify_user] User profile found - user_id: {response.user.id}, tenant_id: {tenant_id}")
+        
         # Return user info with tenant_id (may be None, which is fine for LinkedIn connection)
         return {
             "user_id": response.user.id,
-            "tenant_id": profile_result.data[0].get("tenant_id")  # May be None
+            "tenant_id": tenant_id  # May be None
         }
     except HTTPException:
         raise
     except PostgrestAPIError as e:
         error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
+        logger.error(f"[verify_user] PostgrestAPIError: {error_dict}")
         if error_dict.get('code') == 'PGRST116':
             raise HTTPException(
                 status_code=404,
@@ -343,7 +357,7 @@ def verify_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
             )
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     except Exception as e:
-        logger.error(f"User verification error: {str(e)}", exc_info=True)
+        logger.error(f"[verify_user] User verification error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
 
 @app.post("/api/signup", response_model=SignUpResponse)
@@ -709,16 +723,22 @@ async def connect_linkedin(
     user_info: Dict[str, Any] = Depends(verify_user)
 ):
     """Initiate LinkedIn OAuth flow"""
+    logger.info(f"[LinkedIn Connect] Request received - user_id: {request.user_id}, redirect_uri: {request.redirect_uri}")
+    logger.info(f"[LinkedIn Connect] Verified user_info - user_id: {user_info.get('user_id')}, tenant_id: {user_info.get('tenant_id')}")
     
     # Verify user_id matches
     if request.user_id != user_info["user_id"]:
+        logger.warning(f"[LinkedIn Connect] User ID mismatch - request: {request.user_id}, verified: {user_info.get('user_id')}")
         raise HTTPException(status_code=403, detail="User ID mismatch")
     
     if not LINKEDIN_CLIENT_ID or not LINKEDIN_CLIENT_SECRET:
+        logger.error("[LinkedIn Connect] LinkedIn OAuth credentials not configured")
         raise HTTPException(
             status_code=500,
             detail="LinkedIn OAuth is not configured. Please set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET environment variables."
         )
+    
+    logger.info(f"[LinkedIn Connect] LinkedIn credentials configured - client_id present: {bool(LINKEDIN_CLIENT_ID)}")
     
     # Generate state for CSRF protection
     state = secrets.token_urlsafe(32)
@@ -727,6 +747,7 @@ async def connect_linkedin(
         "redirect_uri": request.redirect_uri,
         "created_at": datetime.utcnow()
     }
+    logger.info(f"[LinkedIn Connect] Generated OAuth state: {state[:20]}... (stored {len(oauth_states)} states)")
     
     # Build authorization URL
     params = {
@@ -738,6 +759,7 @@ async def connect_linkedin(
     }
     
     auth_url = f"{LINKEDIN_AUTH_URL}?{urllib.parse.urlencode(params)}"
+    logger.info(f"[LinkedIn Connect] Generated auth URL - length: {len(auth_url)}, redirect_uri: {request.redirect_uri}")
     
     return LinkedInConnectResponse(
         auth_url=auth_url,

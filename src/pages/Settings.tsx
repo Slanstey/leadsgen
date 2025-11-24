@@ -113,11 +113,21 @@ const Settings = () => {
 
       try {
         // Load LinkedIn profile connection status
+        console.log('[LinkedIn Profile] Loading profile for user:', profile.id);
         const { data: userProfile, error: profileError } = await supabase
           .from("user_profiles")
           .select("linkedin_profile_id, linkedin_profile_url, linkedin_first_name, linkedin_last_name, linkedin_headline, linkedin_connected_at")
           .eq("id", profile.id)
           .single();
+
+        if (profileError) {
+          console.error('[LinkedIn Profile] Error fetching profile:', profileError);
+        } else {
+          console.log('[LinkedIn Profile] Profile loaded:', {
+            hasLinkedInId: !!userProfile?.linkedin_profile_id,
+            linkedinProfileId: userProfile?.linkedin_profile_id,
+          });
+        }
 
         if (!profileError && userProfile) {
           if (userProfile.linkedin_profile_id) {
@@ -129,10 +139,13 @@ const Settings = () => {
               headline: userProfile.linkedin_headline,
               connected_at: userProfile.linkedin_connected_at,
             });
+            console.log('[LinkedIn Profile] Profile set successfully');
+          } else {
+            console.log('[LinkedIn Profile] No LinkedIn profile ID found');
           }
         }
       } catch (error) {
-        console.error("Error loading LinkedIn profile:", error);
+        console.error("[LinkedIn Profile] Error loading LinkedIn profile:", error);
       } finally {
         setLoading(false);
       }
@@ -158,6 +171,14 @@ const Settings = () => {
       }
 
       const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+      const redirectUri = `${window.location.origin}/settings`;
+      
+      console.log('[LinkedIn Connect] Starting connection flow', {
+        backendUrl,
+        redirectUri,
+        userId: profile.id,
+        origin: window.location.origin,
+      });
       
       // Initiate LinkedIn OAuth flow
       // This will redirect to LinkedIn for authorization
@@ -169,12 +190,19 @@ const Settings = () => {
         },
         body: JSON.stringify({
           user_id: profile.id,
-          redirect_uri: `${window.location.origin}/settings`,
+          redirect_uri: redirectUri,
         }),
       });
+      
+      console.log('[LinkedIn Connect] Response status:', response.status, response.statusText);
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('[LinkedIn Connect] Error response:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+        });
         let errorData;
         try {
           errorData = JSON.parse(errorText);
@@ -185,15 +213,22 @@ const Settings = () => {
       }
 
       const data = await response.json();
+      console.log('[LinkedIn Connect] Success, received auth_url:', data.auth_url ? 'Yes' : 'No', {
+        hasAuthUrl: !!data.auth_url,
+        hasState: !!data.state,
+      });
       
       if (data.auth_url) {
         // Redirect to LinkedIn OAuth
+        console.log('[LinkedIn Connect] Redirecting to LinkedIn:', data.auth_url);
         window.location.href = data.auth_url;
       } else {
+        console.error('[LinkedIn Connect] No auth_url in response:', data);
         toast.error("Failed to initiate LinkedIn connection");
+        setLinkedinConnecting(false);
       }
     } catch (error) {
-      console.error("Error connecting LinkedIn:", error);
+      console.error("[LinkedIn Connect] Error connecting LinkedIn:", error);
       toast.error(error instanceof Error ? error.message : "Failed to connect LinkedIn");
       setLinkedinConnecting(false);
     }
