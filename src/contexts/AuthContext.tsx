@@ -64,13 +64,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         shouldShowLoading,
       });
       
-      // Add timeout to prevent infinite loading
+      // Add timeout to prevent infinite loading (increased to 30 seconds for production)
       let timeoutId: NodeJS.Timeout | null = null;
+      let timeoutResolved = false;
+      
       const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) => {
         timeoutId = setTimeout(() => {
-          console.error('[AuthContext] Profile fetch timeout after 10 seconds');
-          resolve({ data: null, error: new Error('Profile fetch timeout') });
-        }, 10000);
+          if (!timeoutResolved) {
+            timeoutResolved = true;
+            console.error('[AuthContext] Profile fetch timeout after 30 seconds');
+            resolve({ data: null, error: new Error('Profile fetch timeout') });
+          }
+        }, 30000); // Increased from 10 to 30 seconds for production
       });
       
       const fetchPromise = supabase
@@ -79,12 +84,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq("id", userId)
         .single();
 
-      const result = await Promise.race([fetchPromise, timeoutPromise]);
-      // Clear timeout if fetch completed before timeout
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
+      let result;
+      try {
+        result = await Promise.race([fetchPromise, timeoutPromise]);
+        // Clear timeout if fetch completed before timeout
+        if (timeoutId && !timeoutResolved) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+          timeoutResolved = true;
+        }
+      } catch (raceError) {
+        // If race throws, clear timeout
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        throw raceError;
       }
+      
       const { data, error } = result;
 
       if (error) {
@@ -123,7 +140,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       currentProfileIdRef.current = null;
     } finally {
-      // Ensure timeout is cleared in finally block
+      // Ensure timeout is cleared in finally block (in case it wasn't cleared earlier)
+      // Note: timeoutId might not be accessible here if it was scoped inside try, but we'll try
       setLoading(false);
       fetchInProgressRef.current = false;
       console.log('[AuthContext] Profile fetch completed', { userId });
