@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Lead, LeadStatus, Comment } from "@/types/lead";
+import { Lead, LeadStatus, Comment, LeadTier } from "@/types/lead";
 import { LeadsTable } from "@/components/LeadsTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,7 @@ const Index = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
   const [companySearch, setCompanySearch] = useState("");
+  const [warmConnectionSearch, setWarmConnectionSearch] = useState("");
   const [showIgnored, setShowIgnored] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +73,7 @@ const Index = () => {
       // Fetch companies for all unique company names
       const uniqueCompanyNames = [...new Set((leadsData || []).map((lead: any) => lead.company_name))];
       const companiesMap = new Map<string, { industry?: string; location?: string; annualRevenue?: string; description?: string }>();
-      
+
       if (uniqueCompanyNames.length > 0) {
         const { data: companiesData, error: companiesError } = await supabase
           .from("companies")
@@ -259,13 +260,19 @@ const Index = () => {
         const matchesCompany = lead.companyName
           .toLowerCase()
           .includes(companySearch.toLowerCase());
-        return matchesStatus && matchesCompany;
+        const matchesWarmConnection =
+          !warmConnectionSearch.trim() ||
+          (lead.warmConnections || "")
+            .toLowerCase()
+            .includes(warmConnectionSearch.toLowerCase());
+
+        return matchesStatus && matchesCompany && matchesWarmConnection;
       });
     } catch (error) {
       console.error("Error filtering leads:", error);
       return leads || [];
     }
-  }, [leads, statusFilter, companySearch, showIgnored]);
+  }, [leads, statusFilter, companySearch, warmConnectionSearch, showIgnored]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -382,6 +389,15 @@ const Index = () => {
                 className="pl-9 h-11 bg-background border-border/50 focus:border-primary/50 transition-colors"
               />
             </div>
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search warm connections..."
+                value={warmConnectionSearch}
+                onChange={(e) => setWarmConnectionSearch(e.target.value)}
+                className="pl-9 h-11 bg-background border-border/50 focus:border-primary/50 transition-colors"
+              />
+            </div>
             <Select
               value={statusFilter}
               onValueChange={(value) => setStatusFilter(value as LeadStatus | "all")}
@@ -450,7 +466,7 @@ const Index = () => {
           <div className="rounded-xl border border-border bg-muted/30 p-12 text-center">
             <h3 className="text-lg font-semibold mb-2">No Leads Available</h3>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              {profile?.tenant_id 
+              {profile?.tenant_id
                 ? "You don't have any leads yet. Generate leads using the search tools above."
                 : "You don't have any leads yet. Generate leads using the search tools above."}
             </p>

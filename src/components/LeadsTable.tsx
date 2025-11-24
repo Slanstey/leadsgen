@@ -19,12 +19,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageSquare, X, Send, Mail, MapPin, Building2, ArrowUpDown, ArrowUp, ArrowDown, MessageSquareText } from "lucide-react";
-import { StatusBadge } from "@/components/StatusBadge";
 import { TierBadge } from "@/components/TierBadge";
 import { toast } from "sonner";
 import { EmailDialog } from "@/components/EmailDialog";
 import { FeedbackDialog } from "@/components/FeedbackDialog";
 import { useAuth } from "@/contexts/AuthContext";
+import { cn } from "@/lib/utils";
 
 interface LeadsTableProps {
   leads: Lead[];
@@ -34,6 +34,65 @@ interface LeadsTableProps {
 
 type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "createdAt" | null;
 type SortDirection = "asc" | "desc" | null;
+
+const statusConfig: Record<
+  LeadStatus,
+  {
+    label: string;
+    triggerClass: string;
+    itemClass: string;
+  }
+> = {
+  not_contacted: {
+    label: "Not Contacted",
+    triggerClass:
+      "bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-100 border-transparent",
+    itemClass:
+      "bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100 data-[highlighted]:bg-slate-100 dark:data-[highlighted]:bg-slate-800",
+  },
+  contacted: {
+    label: "Contacted",
+    triggerClass:
+      "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-100 border-transparent",
+    itemClass:
+      "bg-sky-50 text-sky-800 dark:bg-sky-900 dark:text-sky-100 data-[highlighted]:bg-sky-100 dark:data-[highlighted]:bg-sky-800",
+  },
+  qualified: {
+    label: "Qualified",
+    triggerClass:
+      "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100 border-transparent",
+    itemClass:
+      "bg-emerald-50 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100 data-[highlighted]:bg-emerald-100 dark:data-[highlighted]:bg-emerald-800",
+  },
+  in_progress: {
+    label: "In Progress",
+    triggerClass:
+      "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 border-transparent",
+    itemClass:
+      "bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100 data-[highlighted]:bg-blue-100 dark:data-[highlighted]:bg-blue-800",
+  },
+  closed_won: {
+    label: "Closed Won",
+    triggerClass:
+      "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100 border-transparent",
+    itemClass:
+      "bg-emerald-50 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100 data-[highlighted]:bg-emerald-100 dark:data-[highlighted]:bg-emerald-800",
+  },
+  closed_lost: {
+    label: "Closed Lost",
+    triggerClass:
+      "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100 border-transparent",
+    itemClass:
+      "bg-rose-50 text-rose-800 dark:bg-rose-900 dark:text-rose-100 data-[highlighted]:bg-rose-100 dark:data-[highlighted]:bg-rose-800",
+  },
+  ignored: {
+    label: "Ignored",
+    triggerClass:
+      "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100 border-transparent",
+    itemClass:
+      "bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100 data-[highlighted]:bg-amber-100 dark:data-[highlighted]:bg-amber-800",
+  },
+};
 
 export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTableProps) {
   const navigate = useNavigate();
@@ -315,25 +374,75 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                     <TierBadge tier={lead.tier} />
                   </TableCell>
                   <TableCell className="py-5 px-4 w-[140px]">
+                    {(() => {
+                      const config = statusConfig[lead.status];
+                      return (
                     <Select
                       value={lead.status}
                       onValueChange={(value) => onStatusChange(lead.id, value as LeadStatus)}
                     >
-                      <SelectTrigger className="w-[130px] h-9 border-border/50">
+                      <SelectTrigger
+                        className={cn(
+                          "w-[130px] h-9 text-xs font-medium px-3 border border-transparent",
+                          config?.triggerClass
+                        )}
+                      >
                         <SelectValue>
-                          <StatusBadge status={lead.status} />
+                          <span className="truncate">
+                            {config?.label ?? lead.status}
+                          </span>
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="not_contacted">Not Contacted</SelectItem>
-                        <SelectItem value="contacted">Contacted</SelectItem>
-                        <SelectItem value="qualified">Qualified</SelectItem>
-                        <SelectItem value="in_progress">In Progress</SelectItem>
-                        <SelectItem value="closed_won">Closed Won</SelectItem>
-                        <SelectItem value="closed_lost">Closed Lost</SelectItem>
-                        <SelectItem value="ignored">Ignored</SelectItem>
+                        <SelectItem
+                          value="not_contacted"
+                          className={cn(
+                            "text-xs font-medium",
+                            statusConfig.not_contacted.itemClass
+                          )}
+                        >
+                          {statusConfig.not_contacted.label}
+                        </SelectItem>
+                        <SelectItem
+                          value="in_progress"
+                          className={cn(
+                            "text-xs font-medium",
+                            statusConfig.in_progress.itemClass
+                          )}
+                        >
+                          {statusConfig.in_progress.label}
+                        </SelectItem>
+                        <SelectItem
+                          value="closed_won"
+                          className={cn(
+                            "text-xs font-medium",
+                            statusConfig.closed_won.itemClass
+                          )}
+                        >
+                          {statusConfig.closed_won.label}
+                        </SelectItem>
+                        <SelectItem
+                          value="closed_lost"
+                          className={cn(
+                            "text-xs font-medium",
+                            statusConfig.closed_lost.itemClass
+                          )}
+                        >
+                          {statusConfig.closed_lost.label}
+                        </SelectItem>
+                        <SelectItem
+                          value="ignored"
+                          className={cn(
+                            "text-xs font-medium",
+                            statusConfig.ignored.itemClass
+                          )}
+                        >
+                          {statusConfig.ignored.label}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="py-5 px-4 min-w-[150px] max-w-[200px]">
                     {lead.warmConnections ? (

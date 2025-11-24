@@ -27,13 +27,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchInProgressRef = useRef(false);
 
   const fetchUserProfile = async (userId: string) => {
-    // Safety guard: this function should only be called with a valid userId
-    if (!userId) {
-      console.warn("[AuthContext] fetchUserProfile called without a valid userId - skipping");
-      setLoading(false);
-      return;
-    }
-
     // Prevent concurrent fetches for the same user
     if (fetchInProgressRef.current && currentUserIdRef.current === userId) {
       return;
@@ -57,13 +50,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(true);
       }
 
+      // Add timeout to prevent infinite loading
+      const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: new Error('Profile fetch timeout') }), 10000)
+      );
+
       const fetchPromise = supabase
         .from("user_profiles")
         .select("*")
         .eq("id", userId)
         .single();
 
-      const { data, error } = await fetchPromise;
+      const result = await Promise.race([fetchPromise, timeoutPromise]);
+      const { data, error } = result;
 
       if (error) {
         console.error("Error fetching user profile:", error);
@@ -77,7 +76,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data) {
         setProfile(data);
         currentProfileIdRef.current = data.id;
-        console.log('User profile fetched successfully:', data);
       } else {
         setProfile(null);
         currentProfileIdRef.current = null;
@@ -107,11 +105,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setSession(session);
       setUser(session?.user ?? null);
-      // Only call fetchUserProfile when we have a valid session user id
-      const userId = session?.user?.id;
-      if (userId) {
-        currentUserIdRef.current = userId;
-        await fetchUserProfile(userId);
+      if (session?.user) {
+        currentUserIdRef.current = session.user.id;
+        await fetchUserProfile(session.user.id);
       } else {
         setLoading(false);
         currentUserIdRef.current = null;
@@ -143,15 +139,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
 
-      if (isSignOut || !session?.user || !userId) {
+      if (isSignOut || !session?.user) {
         setProfile(null);
         setLoading(false);
         currentUserIdRef.current = null;
         currentProfileIdRef.current = null;
         fetchInProgressRef.current = false;
-      } else if (!isTokenRefresh && (isSignIn || userChanged) && userId) {
-        // Only fetch if it's a real auth event and user changed,
-        // and we have a valid userId from the session
+      } else if (!isTokenRefresh && (isSignIn || userChanged)) {
+        // Only fetch if it's a real auth event and user changed
         currentUserIdRef.current = userId;
         await fetchUserProfile(userId);
       } else if (isTokenRefresh) {
