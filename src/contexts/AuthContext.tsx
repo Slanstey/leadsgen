@@ -65,12 +65,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       
       // Add timeout to prevent infinite loading
-      const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) => 
-        setTimeout(() => {
+      let timeoutId: NodeJS.Timeout | null = null;
+      const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) => {
+        timeoutId = setTimeout(() => {
           console.error('[AuthContext] Profile fetch timeout after 10 seconds');
           resolve({ data: null, error: new Error('Profile fetch timeout') });
-        }, 10000)
-      );
+        }, 10000);
+      });
       
       const fetchPromise = supabase
         .from("user_profiles")
@@ -79,6 +80,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       const result = await Promise.race([fetchPromise, timeoutPromise]);
+      // Clear timeout if fetch completed before timeout
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
       const { data, error } = result;
 
       if (error) {
@@ -117,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       currentProfileIdRef.current = null;
     } finally {
+      // Ensure timeout is cleared in finally block
       setLoading(false);
       fetchInProgressRef.current = false;
       console.log('[AuthContext] Profile fetch completed', { userId });
