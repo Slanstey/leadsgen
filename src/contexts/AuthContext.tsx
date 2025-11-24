@@ -64,7 +64,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         shouldShowLoading,
       });
       
-      // Add timeout to prevent infinite loading (increased to 30 seconds for production)
+      // Check if we have a valid session before querying
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession) {
+        console.warn('[AuthContext] No active session, cannot fetch profile');
+        setProfile(null);
+        currentProfileIdRef.current = null;
+        setLoading(false);
+        return;
+      }
+      
+      console.log('[AuthContext] Session verified, proceeding with query', {
+        userId,
+        sessionUserId: currentSession.user.id,
+        matches: userId === currentSession.user.id,
+      });
+      
+      // Add timeout to prevent infinite loading (reduced back to 15 seconds with better handling)
       let timeoutId: NodeJS.Timeout | null = null;
       let timeoutResolved = false;
       
@@ -72,28 +88,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         timeoutId = setTimeout(() => {
           if (!timeoutResolved) {
             timeoutResolved = true;
-            console.error('[AuthContext] Profile fetch timeout after 30 seconds');
+            console.error('[AuthContext] Profile fetch timeout after 15 seconds');
             resolve({ data: null, error: new Error('Profile fetch timeout') });
           }
-        }, 30000); // Increased from 10 to 30 seconds for production
+        }, 15000); // 15 seconds should be enough for a simple query
       });
       
+      // Add detailed logging for the query
+      console.log('[AuthContext] Creating Supabase query', {
+        userId,
+        supabaseUrl: import.meta.env.VITE_SUPABASE_URL ? 'Set' : 'Missing',
+        hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+      });
+
+      const startTime = Date.now();
       const fetchPromise = supabase
         .from("user_profiles")
         .select("*")
         .eq("id", userId)
-        .single();
+        .single()
+        .then((result) => {
+          const duration = Date.now() - startTime;
+          console.log('[AuthContext] Supabase query completed', {
+            duration: `${duration}ms`,
+            hasData: !!result.data,
+            hasError: !!result.error,
+            errorCode: result.error?.code,
+            errorMessage: result.error?.message,
+            errorDetails: result.error?.details,
+            errorHint: result.error?.hint,
+          });
+          return result;
+        })
+        .catch((err) => {
+          const duration = Date.now() - startTime;
+          console.error('[AuthContext] Supabase query exception', {
+            duration: `${duration}ms`,
+            error: err,
+            errorMessage: err?.message,
+            errorStack: err?.stack,
+          });
+          throw err;
+        });
 
       let result;
       try {
+        console.log('[AuthContext] Starting Promise.race between fetch and timeout');
         result = await Promise.race([fetchPromise, timeoutPromise]);
+        console.log('[AuthContext] Promise.race completed', {
+          hasData: !!result?.data,
+          hasError: !!result?.error,
+          isTimeout: result?.error?.message === 'Profile fetch timeout',
+        });
+        
         // Clear timeout if fetch completed before timeout
         if (timeoutId && !timeoutResolved) {
           clearTimeout(timeoutId);
           timeoutId = null;
           timeoutResolved = true;
+          console.log('[AuthContext] Timeout cleared successfully');
         }
       } catch (raceError) {
+        console.error('[AuthContext] Promise.race exception', {
+          error: raceError,
+          errorMessage: raceError instanceof Error ? raceError.message : String(raceError),
+        });
         // If race throws, clear timeout
         if (timeoutId) {
           clearTimeout(timeoutId);
