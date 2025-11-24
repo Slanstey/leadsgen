@@ -5,12 +5,29 @@ import type { Database } from './types';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// Log environment variables check (safe to log in production as these are public keys)
+console.log('[Supabase Client] Environment check', {
+  hasUrl: !!SUPABASE_URL,
+  hasKey: !!SUPABASE_ANON_KEY,
+  urlLength: SUPABASE_URL?.length || 0,
+  keyLength: SUPABASE_ANON_KEY?.length || 0,
+  mode: import.meta.env.MODE,
+  isDev: import.meta.env.DEV,
+  isProd: import.meta.env.PROD,
+});
+
 if (!SUPABASE_URL) {
-  throw new Error('Missing env.VITE_SUPABASE_URL');
+  const error = 'Missing env.VITE_SUPABASE_URL - Make sure this is set in Vercel environment variables and rebuild the app';
+  console.error('[Supabase Client]', error);
+  console.error('[Supabase Client] All env vars:', Object.keys(import.meta.env).filter(k => k.startsWith('VITE_')));
+  throw new Error(error);
 }
 
 if (!SUPABASE_ANON_KEY) {
-  throw new Error('Missing env.VITE_SUPABASE_ANON_KEY');
+  const error = 'Missing env.VITE_SUPABASE_ANON_KEY - Make sure this is set in Vercel environment variables and rebuild the app';
+  console.error('[Supabase Client]', error);
+  console.error('[Supabase Client] All env vars:', Object.keys(import.meta.env).filter(k => k.startsWith('VITE_')));
+  throw new Error(error);
 }
 
 // Import the supabase client like this:
@@ -18,8 +35,17 @@ if (!SUPABASE_ANON_KEY) {
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    storage: localStorage,
+    storage: typeof window !== 'undefined' ? localStorage : undefined,
     persistSession: true,
     autoRefreshToken: true,
-  }
+    detectSessionInUrl: true,
+  },
+  db: {
+    schema: 'public',
+  },
+  global: {
+    headers: {
+      'x-client-info': 'leadsgen-web',
+    },
+  },
 });

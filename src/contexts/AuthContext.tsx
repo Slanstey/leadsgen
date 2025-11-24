@@ -58,12 +58,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (shouldShowLoading) {
         setLoading(true);
       }
-      
+
       console.log('[AuthContext] Starting profile fetch', {
         userId,
         shouldShowLoading,
       });
-      
+
       // Check if we have a valid session before querying
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       if (!currentSession) {
@@ -73,17 +73,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
         return;
       }
-      
+
       console.log('[AuthContext] Session verified, proceeding with query', {
         userId,
         sessionUserId: currentSession.user.id,
         matches: userId === currentSession.user.id,
       });
-      
+
       // Add timeout to prevent infinite loading (reduced back to 15 seconds with better handling)
       let timeoutId: NodeJS.Timeout | null = null;
       let timeoutResolved = false;
-      
+
       const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) => {
         timeoutId = setTimeout(() => {
           if (!timeoutResolved) {
@@ -93,15 +93,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }, 15000); // 15 seconds should be enough for a simple query
       });
-      
+
       // Add detailed logging for the query
       console.log('[AuthContext] Creating Supabase query', {
         userId,
         supabaseUrl: import.meta.env.VITE_SUPABASE_URL ? 'Set' : 'Missing',
         hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+        supabaseUrlValue: import.meta.env.VITE_SUPABASE_URL?.substring(0, 30) + '...' || 'Missing',
       });
 
+      // Verify Supabase client is initialized
+      if (!supabase) {
+        console.error('[AuthContext] Supabase client is not initialized!');
+        setProfile(null);
+        currentProfileIdRef.current = null;
+        setLoading(false);
+        return;
+      }
+
       const startTime = Date.now();
+      console.log('[AuthContext] Executing Supabase query at', new Date().toISOString());
+
       const fetchPromise = supabase
         .from("user_profiles")
         .select("*")
@@ -111,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const duration = Date.now() - startTime;
           console.log('[AuthContext] Supabase query completed', {
             duration: `${duration}ms`,
+            timestamp: new Date().toISOString(),
             hasData: !!result.data,
             hasError: !!result.error,
             errorCode: result.error?.code,
@@ -124,12 +137,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const duration = Date.now() - startTime;
           console.error('[AuthContext] Supabase query exception', {
             duration: `${duration}ms`,
+            timestamp: new Date().toISOString(),
             error: err,
             errorMessage: err?.message,
             errorStack: err?.stack,
           });
           throw err;
         });
+
+      console.log('[AuthContext] Query promise created, waiting for response...');
 
       let result;
       try {
@@ -140,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           hasError: !!result?.error,
           isTimeout: result?.error?.message === 'Profile fetch timeout',
         });
-        
+
         // Clear timeout if fetch completed before timeout
         if (timeoutId && !timeoutResolved) {
           clearTimeout(timeoutId);
@@ -160,7 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         throw raceError;
       }
-      
+
       const { data, error } = result;
 
       if (error) {
@@ -177,7 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
         return;
       }
-      
+
       if (data) {
         console.log('[AuthContext] Profile fetched successfully', {
           userId: data.id,
@@ -213,7 +229,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Get initial session
     supabase.auth.getSession().then(async ({ data: { session }, error }) => {
       if (!mounted) return;
-      
+
       if (error) {
         console.error("Error getting session:", error);
         setLoading(false);
@@ -252,10 +268,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const isSignOut = event === 'SIGNED_OUT';
       const userId = session?.user?.id ?? null;
       const userChanged = userId !== currentUserIdRef.current;
-      
+
       setSession(session);
       setUser(session?.user ?? null);
-      
+
       if (isSignOut || !session?.user) {
         setProfile(null);
         setLoading(false);
@@ -311,7 +327,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Call backend signup endpoint which handles tenant creation/assignment
     // Backend uses service role key to bypass RLS and create tenants
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-    
+
     const response = await fetch(`${backendUrl}/api/signup`, {
       method: 'POST',
       headers: {
