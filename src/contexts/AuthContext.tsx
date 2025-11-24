@@ -27,13 +27,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchInProgressRef = useRef(false);
 
   const fetchUserProfile = async (userId: string) => {
+    // Safety guard: this function should only be called with a valid userId
+    if (!userId) {
+      console.warn("[AuthContext] fetchUserProfile called without a valid userId - skipping");
+      setLoading(false);
+      return;
+    }
+
     // Prevent concurrent fetches for the same user
     if (fetchInProgressRef.current && currentUserIdRef.current === userId) {
       return;
     }
 
     // If we already have the profile for this user, don't fetch again
-    if ((currentProfileIdRef.current === userId && currentUserIdRef.current === userId) || !userId) {
+    if (currentProfileIdRef.current === userId && currentUserIdRef.current === userId) {
       // Ensure loading is false since we already have the profile
       setLoading(false);
       return;
@@ -100,9 +107,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user) {
-        currentUserIdRef.current = session.user.id;
-        await fetchUserProfile(session.user.id);
+      // Only call fetchUserProfile when we have a valid session user id
+      const userId = session?.user?.id;
+      if (userId) {
+        currentUserIdRef.current = userId;
+        await fetchUserProfile(userId);
       } else {
         setLoading(false);
         currentUserIdRef.current = null;
@@ -134,14 +143,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
 
-      if (isSignOut || !session?.user) {
+      if (isSignOut || !session?.user || !userId) {
         setProfile(null);
         setLoading(false);
         currentUserIdRef.current = null;
         currentProfileIdRef.current = null;
         fetchInProgressRef.current = false;
-      } else if (!isTokenRefresh && (isSignIn || userChanged)) {
-        // Only fetch if it's a real auth event and user changed
+      } else if (!isTokenRefresh && (isSignIn || userChanged) && userId) {
+        // Only fetch if it's a real auth event and user changed,
+        // and we have a valid userId from the session
         currentUserIdRef.current = userId;
         await fetchUserProfile(userId);
       } else if (isTokenRefresh) {
