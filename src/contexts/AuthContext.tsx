@@ -64,20 +64,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         shouldShowLoading,
       });
 
-      // Check if we have a valid session before querying
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      if (!currentSession) {
-        console.warn('[AuthContext] No active session, cannot fetch profile');
-        setProfile(null);
-        currentProfileIdRef.current = null;
-        setLoading(false);
-        return;
+      // Use the session from state instead of calling getSession() again
+      // This avoids redundant calls and potential timeouts that can happen after OAuth redirects
+      // If session is not available in state, skip the check and proceed (session will be validated by Supabase RLS)
+      const currentSession = session;
+      if (currentSession && currentSession.user.id !== userId) {
+        console.warn('[AuthContext] Session user ID mismatch', {
+          sessionUserId: currentSession.user.id,
+          requestedUserId: userId,
+        });
+        // Don't block - let Supabase RLS handle authorization
       }
 
-      console.log('[AuthContext] Session verified, proceeding with query', {
+      console.log('[AuthContext] Proceeding with query', {
         userId,
-        sessionUserId: currentSession.user.id,
-        matches: userId === currentSession.user.id,
+        hasSessionInState: !!currentSession,
+        sessionUserId: currentSession?.user?.id,
       });
 
       // Add timeout to prevent infinite loading (reduced back to 15 seconds with better handling)
@@ -114,12 +116,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const startTime = Date.now();
       console.log('[AuthContext] Executing Supabase query at', new Date().toISOString());
 
-      const fetchPromise = supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", userId)
-        .single()
-        .then((result) => {
+      const fetchPromise = (async () => {
+        try {
+          const result = await supabase
+            .from("user_profiles")
+            .select("*")
+            .eq("id", userId)
+            .single();
+
           const duration = Date.now() - startTime;
           console.log('[AuthContext] Supabase query completed', {
             duration: `${duration}ms`,
@@ -132,18 +136,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             errorHint: result.error?.hint,
           });
           return result;
-        })
-        .catch((err) => {
+        } catch (err) {
           const duration = Date.now() - startTime;
           console.error('[AuthContext] Supabase query exception', {
             duration: `${duration}ms`,
             timestamp: new Date().toISOString(),
             error: err,
-            errorMessage: err?.message,
-            errorStack: err?.stack,
+            errorMessage: err instanceof Error ? err.message : String(err),
+            errorStack: err instanceof Error ? err.stack : undefined,
           });
           throw err;
-        });
+        }
+      })();
 
       console.log('[AuthContext] Query promise created, waiting for response...');
 
