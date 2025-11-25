@@ -49,12 +49,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (shouldShowLoading) {
         setLoading(true);
       }
-      
+
       // Add timeout to prevent infinite loading
-      const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) => 
+      const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) =>
         setTimeout(() => resolve({ data: null, error: new Error('Profile fetch timeout') }), 10000)
       );
-      
+
       const fetchPromise = supabase
         .from("user_profiles")
         .select("*")
@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
         return;
       }
-      
+
       if (data) {
         setProfile(data);
         currentProfileIdRef.current = data.id;
@@ -96,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Get initial session
     supabase.auth.getSession().then(async ({ data: { session }, error }) => {
       if (!mounted) return;
-      
+
       if (error) {
         console.error("Error getting session:", error);
         setLoading(false);
@@ -135,10 +135,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const isSignOut = event === 'SIGNED_OUT';
       const userId = session?.user?.id ?? null;
       const userChanged = userId !== currentUserIdRef.current;
-      
+
       setSession(session);
       setUser(session?.user ?? null);
-      
+
       if (isSignOut || !session?.user) {
         setProfile(null);
         setLoading(false);
@@ -194,7 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Call backend signup endpoint which handles tenant creation/assignment
     // Backend uses service role key to bypass RLS and create tenants
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-    
+
     const response = await fetch(`${backendUrl}/api/signup`, {
       method: 'POST',
       headers: {

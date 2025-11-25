@@ -141,10 +141,81 @@ const CompanyDetail = () => {
                       <p className="font-medium">{company.industry}</p>
                     </div>
                   </div>
+                  {company.location && (
+                    <div className="flex gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                        <MapPin className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Location</p>
+                        <p className="font-medium">{company.location}</p>
+                      </div>
+                    </div>
+                  )}
+                  {company.annual_revenue && (
+                    <div className="flex gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                        <DollarSign className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Annual Revenue</p>
+                        <p className="font-medium">{company.annual_revenue}</p>
+                      </div>
+                    </div>
+                  )}
+                  {company.industry && (
+                    <div className="flex gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                        <Briefcase className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Industry</p>
+                        <p className="font-medium">{company.industry}</p>
+                      </div>
+                    </div>
+                  )}
+                  {company.sub_industry && (
+                    <div className="flex gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                        <Building2 className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Sub-Industry</p>
+                        <p className="font-medium">{company.sub_industry}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
+            {(newsLoading || news.length > 0) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Latest News</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {newsLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <span className="ml-2 text-muted-foreground">Fetching latest news...</span>
+                    </div>
+                  ) : (
+                    news.map((item) => (
+                      <div key={item.id} className="border-l-4 border-primary pl-4 py-2">
+                        <h3 className="font-semibold mb-1">{item.title}</h3>
+                        <p className="text-sm text-muted-foreground mb-2">{item.summary}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{item.source}</span>
+                          <span>•</span>
+                          <span>{new Date(item.date).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </main>
