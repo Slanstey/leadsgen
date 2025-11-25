@@ -204,7 +204,6 @@ export function CsvUploadDialog({
         company_sub_industry: "",
         company_annual_revenue: "",
         company_description: "",
-        warm_connections: "",
       } as typeof columnMapping;
 
       csvHeaders.forEach((header) => {
@@ -251,17 +250,6 @@ export function CsvUploadDialog({
             lowerHeader.includes("job"))
         ) {
           autoMapping.role = header;
-        }
-
-        // Warm connections mappings
-        if (
-          !autoMapping.warm_connections &&
-          (lowerHeader.includes("warm") ||
-            lowerHeader.includes("connection") ||
-            lowerHeader.includes("mutual") ||
-            lowerHeader.includes("intro"))
-        ) {
-          autoMapping.warm_connections = header;
         }
 
         // Company location mappings
@@ -483,7 +471,7 @@ export function CsvUploadDialog({
               status: status as any,
               tier: tier as any,
               ...(tierReason && { tier_reason: tierReason }),
-              ...(columnMapping.warm_connections && { warm_connections: warmConnections }),
+              ...(warmConnections && { warm_connections: warmConnections }),
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             } as any,
