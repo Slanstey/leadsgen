@@ -576,7 +576,7 @@ const AdminTenantDetail = () => {
 
   return (
     <div className="min-h-screen bg-background p-6">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className="flex items-center gap-4 mb-6">
           <Button
             variant="ghost"
@@ -591,9 +591,9 @@ const AdminTenantDetail = () => {
           </div>
         </div>
 
-        <div className="grid gap-6">
+        <div className="grid gap-6 lg:grid-cols-2 auto-rows-min">
           {/* Tenant Information */}
-          <Card>
+          <Card className="lg:col-span-1">
             <CardHeader>
               <CardTitle>Tenant Information</CardTitle>
             </CardHeader>
@@ -616,7 +616,7 @@ const AdminTenantDetail = () => {
           </Card>
 
           {/* Admin Notes */}
-          <Card>
+          <Card className="lg:col-span-1">
             <CardHeader>
               <CardTitle>Admin Notes</CardTitle>
               <CardDescription>Additional notes for lead generation context</CardDescription>
@@ -654,7 +654,7 @@ const AdminTenantDetail = () => {
           </Card>
 
           {/* Preferences */}
-          <Card>
+          <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle>Lead Generation Preferences</CardTitle>
               <CardDescription>Define ideal lead criteria to help target the right prospects</CardDescription>
@@ -890,7 +890,7 @@ const AdminTenantDetail = () => {
           </Card>
 
           {/* Lead Field Visibility */}
-          <Card>
+          <Card className="lg:col-span-2 lg:row-span-1">
             <CardHeader>
               <CardTitle>Lead Field Visibility</CardTitle>
               <CardDescription>
@@ -997,7 +997,7 @@ const AdminTenantDetail = () => {
           </Card>
 
           {/* Users */}
-          <Card>
+          <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle>Users</CardTitle>
               <CardDescription>{tenantDetail.users.length} {tenantDetail.users.length === 1 ? 'user' : 'users'} in this tenant</CardDescription>
@@ -1039,7 +1039,7 @@ const AdminTenantDetail = () => {
           </Card>
 
           {/* Leads Section */}
-          <Card>
+          <Card className="lg:col-span-2">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>

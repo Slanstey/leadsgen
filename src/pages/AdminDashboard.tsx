@@ -678,52 +678,54 @@ const AdminDashboard = () => {
                   No leads are currently staged for this tenant. Generate leads again to populate this view.
                 </p>
               ) : (
-                <div className="border rounded-md overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Company</TableHead>
-                        <TableHead>Contact</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Role</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Tier</TableHead>
-                        <TableHead className="w-[60px] text-right">Remove</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {generatedLeadsPreview.map((lead, index) => (
-                        <TableRow key={`${lead.company_name}-${lead.contact_person}-${index}`}>
-                          <TableCell>{lead.company_name}</TableCell>
-                          <TableCell>{lead.contact_person}</TableCell>
-                          <TableCell>{lead.contact_email}</TableCell>
-                          <TableCell>{lead.role}</TableCell>
-                          <TableCell className="capitalize text-xs">
-                            {lead.status.replace("_", " ")}
-                          </TableCell>
-                          <TableCell className="capitalize text-xs">
-                            {lead.tier}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleRemoveGeneratedPreviewLead(index)}
-                              className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
+                <div className="space-y-2">
+                  <div className="border rounded-md overflow-auto" style={{ maxHeight: '600px' }}>
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
+                        <TableRow>
+                          <TableHead>Company</TableHead>
+                          <TableHead>Contact</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Role</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Tier</TableHead>
+                          <TableHead className="w-[60px] text-right">Remove</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {generatedLeadsPreview.map((lead, index) => (
+                          <TableRow key={`${lead.company_name}-${lead.contact_person}-${index}`}>
+                            <TableCell>{lead.company_name}</TableCell>
+                            <TableCell>{lead.contact_person}</TableCell>
+                            <TableCell>{lead.contact_email}</TableCell>
+                            <TableCell>{lead.role}</TableCell>
+                            <TableCell className="capitalize text-xs">
+                              {lead.status.replace("_", " ")}
+                            </TableCell>
+                            <TableCell className="capitalize text-xs">
+                              {lead.tier}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleRemoveGeneratedPreviewLead(index)}
+                                className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Leads will only be written to the database after you click <span className="font-semibold">Release Leads</span>.
+                  </p>
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">
-                Leads will only be written to the database after you click <span className="font-semibold">Release Leads</span>.
-              </p>
             </div>
 
             <DialogFooter className="flex-shrink-0">

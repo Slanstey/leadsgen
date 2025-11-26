@@ -115,11 +115,11 @@ export function CsvUploadDialog({
   const requiredLeadFields = [
     { key: "company_name", label: "Company Name" },
     { key: "contact_person", label: "Contact Person" },
-    { key: "contact_email", label: "Contact Email" },
     { key: "role", label: "Role" },
   ];
 
   const optionalLeadFields = [
+    { key: "contact_email", label: "Contact Email", required: false },
     { key: "status", label: "Status", required: false },
     { key: "tier", label: "Tier (good/medium/bad)", required: false },
     { key: "tier_reason", label: "Tier Reason", required: false },
@@ -134,30 +134,84 @@ export function CsvUploadDialog({
     { key: "company_description", label: "Company Description", required: true },
   ];
 
-  // Function to parse CSV with custom delimiter
+  // Function to parse CSV with custom delimiter.
+  // Supports:
+  // - Quoted fields with inverted commas (")
+  // - Delimiters inside quoted fields
+  // - Escaped quotes ("") inside quoted fields
+  // - Newlines inside quoted fields
   const parseCSV = (text: string, delimiter: string): ParsedRow[] => {
-    const lines = text.split(/\r?\n/).filter(line => line.trim());
-    if (lines.length === 0) return [];
+    const rows: string[][] = [];
+    let currentField = "";
+    let currentRow: string[] = [];
+    let inQuotes = false;
 
-    // Parse header
-    const headerLine = lines[0];
-    const headers = parseCSVLine(headerLine, delimiter);
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const nextChar = text[i + 1];
 
-    // Parse data rows
-    const rows: ParsedRow[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const values = parseCSVLine(lines[i], delimiter);
-      const row: ParsedRow = {};
-      headers.forEach((header, index) => {
-        row[header] = values[index] || "";
-      });
-      rows.push(row);
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          // Escaped quote inside a quoted field -> add a single quote
+          currentField += '"';
+          i++; // Skip the next quote
+        } else {
+          // Toggle quoted state, do not add the quote itself
+          inQuotes = !inQuotes;
+        }
+      } else if (char === delimiter && !inQuotes) {
+        // Delimiter outside quotes -> end of field
+        currentRow.push(currentField.trim());
+        currentField = "";
+      } else if ((char === "\n" || char === "\r") && !inQuotes) {
+        // Newline outside quotes -> end of row
+        currentRow.push(currentField.trim());
+        currentField = "";
+
+        // Only push non-empty rows (ignore stray blank lines)
+        if (currentRow.some((cell) => cell.length > 0)) {
+          rows.push(currentRow);
+        }
+        currentRow = [];
+
+        // If we hit \r\n, skip the \n
+        if (char === "\r" && nextChar === "\n") {
+          i++;
+        }
+      } else {
+        // Regular character
+        currentField += char;
+      }
     }
 
-    return rows;
+    // Flush last field / row at EOF
+    if (currentField.length > 0 || currentRow.length > 0) {
+      currentRow.push(currentField.trim());
+      if (currentRow.some((cell) => cell.length > 0)) {
+        rows.push(currentRow);
+      }
+    }
+
+    if (rows.length === 0) return [];
+
+    // First row is the header
+    const headerCells = rows[0];
+    const headers = headerCells.map((h) => h.trim());
+
+    const parsedRows: ParsedRow[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const values = rows[i];
+      const row: ParsedRow = {};
+      headers.forEach((header, index) => {
+        row[header] = values[index] ?? "";
+      });
+      parsedRows.push(row);
+    }
+
+    return parsedRows;
   };
 
-  // Helper function to parse a CSV line, handling quoted fields
+  // Helper function retained for potential future use (parses a single CSV line)
   const parseCSVLine = (line: string, delimiter: string): string[] => {
     const result: string[] = [];
     let current = "";
@@ -449,8 +503,8 @@ export function CsvUploadDialog({
         const contactEmail = row[columnMapping.contact_email]?.toString().trim() || "";
         const role = row[columnMapping.role]?.toString().trim() || "";
 
-        // Skip rows with missing required lead fields
-        if (!companyName || !contactPerson || !contactEmail || !role) {
+        // Skip rows with missing required lead fields (email is optional)
+        if (!companyName || !contactPerson || !role) {
           return null;
         }
 
@@ -859,7 +913,8 @@ export function CsvUploadDialog({
 
       console.log("[CSV Upload] Processing", validLeads.length, "leads with valid companies");
 
-      // Step 6: Check which leads already exist (based on company_name + contact_person)
+      // Step 6: Check which leads already exist (based on tenant_id + company_name + contact_person)
+      // Different companies can have the same contact person - duplicates are only within the same tenant + company + contact person
       // Use normalized values for consistent matching
       const existingLeadsSet = new Set<string>();
       const leadBatchSize = 100;
@@ -872,7 +927,9 @@ export function CsvUploadDialog({
         for (const leadItem of batch) {
           const normalizedCompanyName = leadItem.company.name.trim();
           const normalizedContactPerson = leadItem.lead.contact_person.trim();
-          const key = `${normalizedCompanyName.toLowerCase()}|||${normalizedContactPerson.toLowerCase()}`;
+          // Include tenant_id in the key to ensure uniqueness is per-tenant
+          // Same contact person can exist at different companies (different company_name values)
+          const key = `${tenantId}|||${normalizedCompanyName.toLowerCase()}|||${normalizedContactPerson.toLowerCase()}`;
 
           // First try exact match (case-sensitive)
           const { data: exactMatch } = await supabase
@@ -910,11 +967,14 @@ export function CsvUploadDialog({
 
       // Step 7: Filter out existing leads and prepare new leads for insertion
       // Use normalized company names from the database
+      // Duplicate check: tenant_id + company_name + contact_person
+      // This allows the same contact person to exist at different companies
       const leadsToInsert = validLeads
         .filter(item => {
           const normalizedCompanyName = item.company.name.trim();
           const normalizedContactPerson = item.lead.contact_person.trim();
-          const key = `${normalizedCompanyName.toLowerCase()}|||${normalizedContactPerson.toLowerCase()}`;
+          // Include tenant_id in the key to match the duplicate check
+          const key = `${tenantId}|||${normalizedCompanyName.toLowerCase()}|||${normalizedContactPerson.toLowerCase()}`;
           return !existingLeadsSet.has(key);
         })
         .map(item => {
@@ -1182,8 +1242,8 @@ export function CsvUploadDialog({
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Supported formats: CSV, Excel (.xlsx, .xls). Required: Company Name, Contact Person, Email, Role.
-              Optional: Company Location (City, Country), Industry, Sub-Industry, Annual Revenue, Description.
+              Supported formats: CSV, Excel (.xlsx, .xls). Required: Company Name, Contact Person, Role.
+              Optional: Email, Company Location (City, Country), Industry, Sub-Industry, Annual Revenue, Description.
             </p>
           </div>
 
@@ -1371,9 +1431,9 @@ export function CsvUploadDialog({
               <Label className="text-sm font-medium">
                 Leads to be created ({stagedLeads.length})
               </Label>
-              <div className="border rounded-md overflow-hidden max-h-[320px]">
+              <div className="border rounded-md overflow-auto" style={{ maxHeight: '600px' }}>
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
                     <TableRow>
                       <TableHead>Company</TableHead>
                       <TableHead>Contact</TableHead>
