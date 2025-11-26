@@ -61,27 +61,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq("id", userId)
         .single();
 
-      if (session && supabase) {
-        const result = await Promise.race([fetchPromise, timeoutPromise]);
-        const { data, error } = result;
+      console.log(session, supabase);
+      const result = await Promise.race([fetchPromise, timeoutPromise]);
+      const { data, error } = result;
 
 
-        if (error) {
-          console.error("Error fetching user profile:", error);
-          // Don't set profile if there's an error, but stop loading
-          setProfile(null);
-          currentProfileIdRef.current = null;
-          setLoading(false);
-          return;
-        }
+      if (error) {
+        console.error("Error fetching user profile:", error);
+        // Don't set profile if there's an error, but stop loading
+        setProfile(null);
+        currentProfileIdRef.current = null;
+        setLoading(false);
+        return;
+      }
 
-        if (data) {
-          setProfile(data);
-          currentProfileIdRef.current = data.id;
-        } else {
-          setProfile(null);
-          currentProfileIdRef.current = null;
-        }
+      if (data) {
+        setProfile(data);
+        currentProfileIdRef.current = data.id;
+      } else {
+        setProfile(null);
+        currentProfileIdRef.current = null;
       }
     } catch (error) {
       console.error("Error fetching user profile:", error);
