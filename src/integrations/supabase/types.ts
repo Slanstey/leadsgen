@@ -197,6 +197,7 @@ export type Database = {
           company_size: string | null
           company_type: string | null
           created_at: string | null
+          field_visibility: Json | null
           experience_operator: string | null
           experience_years: number | null
           funding_stage: string | null
@@ -216,6 +217,7 @@ export type Database = {
           company_size?: string | null
           company_type?: string | null
           created_at?: string | null
+          field_visibility?: Json | null
           experience_operator?: string | null
           experience_years?: number | null
           funding_stage?: string | null
@@ -235,6 +237,7 @@ export type Database = {
           company_size?: string | null
           company_type?: string | null
           created_at?: string | null
+          field_visibility?: Json | null
           experience_operator?: string | null
           experience_years?: number | null
           funding_stage?: string | null

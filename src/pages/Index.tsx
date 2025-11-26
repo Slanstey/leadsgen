@@ -24,6 +24,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ExportDialog } from "@/components/ExportDialog";
+import { FieldVisibilityConfig, defaultFieldVisibility } from "@/types/tenantPreferences";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -37,6 +38,38 @@ const Index = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [fieldVisibility, setFieldVisibility] = useState<FieldVisibilityConfig>(defaultFieldVisibility);
+
+  const fetchFieldVisibility = useCallback(async () => {
+    if (!profile?.tenant_id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from("tenant_preferences")
+        .select("field_visibility")
+        .eq("tenant_id", profile.tenant_id)
+        .maybeSingle();
+
+      if (error && error.code !== "PGRST116") {
+        console.error("Field visibility fetch error:", error);
+        return;
+      }
+
+      const existing = (data as any)?.field_visibility as Partial<FieldVisibilityConfig> | null;
+
+      if (existing && typeof existing === "object") {
+        setFieldVisibility({
+          ...defaultFieldVisibility,
+          ...existing,
+        });
+      } else {
+        setFieldVisibility(defaultFieldVisibility);
+      }
+    } catch (err) {
+      console.error("Error loading field visibility:", err);
+      setFieldVisibility(defaultFieldVisibility);
+    }
+  }, [profile?.tenant_id]);
 
   // Fetch leads from database
   const fetchLeads = useCallback(async () => {
@@ -147,23 +180,25 @@ const Index = () => {
   useEffect(() => {
     // Fetch leads for user's tenant (all users have tenant_id now)
     if (profile?.tenant_id) {
+      fetchFieldVisibility();
       fetchLeads();
     } else {
       setLeads([]);
       setLoading(false);
     }
-  }, [profile?.tenant_id]);
+  }, [profile?.tenant_id, fetchFieldVisibility, fetchLeads]);
 
   // Refetch when navigating back to this page
   useEffect(() => {
     const DEFAULT_TENANT_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
     if (location.pathname === "/" && profile?.tenant_id && profile.tenant_id !== DEFAULT_TENANT_ID && !loading) {
+      fetchFieldVisibility();
       fetchLeads();
     } else if (profile?.tenant_id === DEFAULT_TENANT_ID) {
       setLeads([]);
       setLoading(false);
     }
-  }, [location.pathname, profile?.tenant_id]); // Remove fetchLeads from dependencies
+  }, [location.pathname, profile?.tenant_id, fetchFieldVisibility, fetchLeads]); // Remove fetchLeads from dependencies
 
   const handleStatusChange = async (leadId: string, newStatus: LeadStatus) => {
     try {
@@ -476,6 +511,7 @@ const Index = () => {
             leads={filteredLeads}
             onStatusChange={handleStatusChange}
             onAddComment={handleAddComment}
+            fieldVisibility={fieldVisibility}
           />
         )}
 

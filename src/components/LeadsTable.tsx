@@ -25,11 +25,13 @@ import { EmailDialog } from "@/components/EmailDialog";
 import { FeedbackDialog } from "@/components/FeedbackDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { FieldVisibilityConfig, defaultFieldVisibility } from "@/types/tenantPreferences";
 
 interface LeadsTableProps {
   leads: Lead[];
   onStatusChange: (leadId: string, newStatus: LeadStatus) => void;
   onAddComment: (leadId: string, comment: string) => void;
+  fieldVisibility?: FieldVisibilityConfig;
 }
 
 type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "createdAt" | null;
@@ -94,7 +96,7 @@ const statusConfig: Record<
   },
 };
 
-export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTableProps) {
+export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibility }: LeadsTableProps) {
   const navigate = useNavigate();
   const { profile } = useAuth();
   const [commentingLead, setCommentingLead] = useState<string | null>(null);
@@ -104,6 +106,9 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [sortColumn, setSortColumn] = useState<SortColumn>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
+  const visibility = fieldVisibility || defaultFieldVisibility;
+  const visibleColumnCount = Object.values(visibility).filter(Boolean).length || 1;
 
   const isNewLead = (lead: Lead): boolean => {
     const threeDaysAgo = new Date();
@@ -251,63 +256,87 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
         <Table>
           <TableHeader>
             <TableRow className="border-b-2 border-border/60 hover:bg-transparent">
-              <TableHead 
-                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() => handleSort("companyName")}
-              >
-                <div className="flex items-center">
-                  Company
-                  <SortIcon column="companyName" />
-                </div>
-              </TableHead>
-              <TableHead className="h-14 font-semibold text-sm min-w-[200px] max-w-[250px]">Details</TableHead>
-              <TableHead 
-                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() => handleSort("contactPerson")}
-              >
-                <div className="flex items-center">
-                  Contact Person
-                  <SortIcon column="contactPerson" />
-                </div>
-              </TableHead>
-              <TableHead 
-                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[180px]"
-                onClick={() => handleSort("contactEmail")}
-              >
-                <div className="flex items-center">
-                  Email
-                  <SortIcon column="contactEmail" />
-                </div>
-              </TableHead>
-              <TableHead 
-                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() => handleSort("role")}
-              >
-                <div className="flex items-center">
-                  Role
-                  <SortIcon column="role" />
-                </div>
-              </TableHead>
-              <TableHead 
-                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[100px]"
-                onClick={() => handleSort("tier")}
-              >
-                <div className="flex items-center">
-                  Tier
-                  <SortIcon column="tier" />
-                </div>
-              </TableHead>
-              <TableHead 
-                className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[140px]"
-                onClick={() => handleSort("status")}
-              >
-                <div className="flex items-center">
-                  Status
-                  <SortIcon column="status" />
-                </div>
-              </TableHead>
-              <TableHead className="h-14 font-semibold text-sm min-w-[150px] max-w-[200px]">Warm Connections</TableHead>
-              <TableHead className="h-14 font-semibold text-sm text-right">Actions</TableHead>
+              {visibility.company && (
+                <TableHead
+                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("companyName")}
+                >
+                  <div className="flex items-center">
+                    Company
+                    <SortIcon column="companyName" />
+                  </div>
+                </TableHead>
+              )}
+              {visibility.details && (
+                <TableHead className="h-14 font-semibold text-sm min-w-[200px] max-w-[250px]">
+                  Details
+                </TableHead>
+              )}
+              {visibility.contactPerson && (
+                <TableHead
+                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("contactPerson")}
+                >
+                  <div className="flex items-center">
+                    Contact Person
+                    <SortIcon column="contactPerson" />
+                  </div>
+                </TableHead>
+              )}
+              {visibility.contactEmail && (
+                <TableHead
+                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[180px]"
+                  onClick={() => handleSort("contactEmail")}
+                >
+                  <div className="flex items-center">
+                    Email
+                    <SortIcon column="contactEmail" />
+                  </div>
+                </TableHead>
+              )}
+              {visibility.role && (
+                <TableHead
+                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("role")}
+                >
+                  <div className="flex items-center">
+                    Role
+                    <SortIcon column="role" />
+                  </div>
+                </TableHead>
+              )}
+              {visibility.tier && (
+                <TableHead
+                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[100px]"
+                  onClick={() => handleSort("tier")}
+                >
+                  <div className="flex items-center">
+                    Tier
+                    <SortIcon column="tier" />
+                  </div>
+                </TableHead>
+              )}
+              {visibility.status && (
+                <TableHead
+                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[140px]"
+                  onClick={() => handleSort("status")}
+                >
+                  <div className="flex items-center">
+                    Status
+                    <SortIcon column="status" />
+                  </div>
+                </TableHead>
+              )}
+              {visibility.warmConnections && (
+                <TableHead className="h-14 font-semibold text-sm min-w-[150px] max-w-[200px]">
+                  Warm Connections
+                </TableHead>
+              )}
+              {visibility.actions && (
+                <TableHead className="h-14 font-semibold text-sm text-right">
+                  Actions
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -318,193 +347,211 @@ export function LeadsTable({ leads, onStatusChange, onAddComment }: LeadsTablePr
                     isNewLead(lead) ? "border-l-4 border-l-success bg-success/5" : ""
                   } ${index % 2 === 0 ? "bg-background" : "bg-muted/10"}`}
                 >
-                  <TableCell className="py-5 px-4">
-                    <button
-                      onClick={() => handleCompanyClick(lead.companyName)}
-                      className="font-semibold text-primary hover:text-primary/80 hover:underline transition-colors text-left"
-                    >
-                      {lead.companyName}
-                    </button>
-                  </TableCell>
-                  <TableCell className="py-5 px-4">
-                    <div className="flex flex-col gap-1.5 min-w-[200px] max-w-[250px]">
-                      {lead.company?.description && (
-                        <span className="inline-flex items-start gap-1 px-2 py-1 rounded-md bg-muted/60 text-muted-foreground text-xs line-clamp-2 leading-relaxed">
-                          {lead.company.description}
-                        </span>
-                      )}
-                      {lead.company && (lead.company.industry || lead.company.location) && (
-                        <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                          {lead.company.industry && lead.company.industry !== "Unknown" && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground">
-                              <Building2 className="h-3 w-3 flex-shrink-0" />
-                              <span className="truncate max-w-[120px]">{lead.company.industry}</span>
-                            </span>
-                          )}
-                          {lead.company.location && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground">
-                              <MapPin className="h-3 w-3 flex-shrink-0" />
-                              <span className="truncate max-w-[120px]">{lead.company.location}</span>
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="py-5 px-4">
-                    <span className="text-sm">{lead.contactPerson}</span>
-                  </TableCell>
-                  <TableCell className="py-5 px-4 w-[180px]">
-                    {lead.contactEmail ? (
-                      <a 
-                        href={`mailto:${lead.contactEmail}`}
-                        className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5 group/email"
+                  {visibility.company && (
+                    <TableCell className="py-5 px-4">
+                      <button
+                        onClick={() => handleCompanyClick(lead.companyName)}
+                        className="font-semibold text-primary hover:text-primary/80 hover:underline transition-colors text-left"
                       >
-                        <Mail className="h-3.5 w-3.5 opacity-60 group-hover/email:opacity-100 group-hover/email:text-primary transition-all flex-shrink-0" />
-                        <span className="hover:underline truncate">{lead.contactEmail}</span>
-                      </a>
-                    ) : (
-                      <span className="text-sm text-muted-foreground/50 italic">No email</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="py-5 px-4">
-                    <span className="text-sm">{lead.role}</span>
-                  </TableCell>
-                  <TableCell className="py-5 px-4 w-[100px]">
-                    <TierBadge tier={lead.tier} />
-                  </TableCell>
-                  <TableCell className="py-5 px-4 w-[140px]">
-                    {(() => {
-                      const config = statusConfig[lead.status];
-                      return (
-                    <Select
-                      value={lead.status}
-                      onValueChange={(value) => onStatusChange(lead.id, value as LeadStatus)}
-                    >
-                      <SelectTrigger
-                        className={cn(
-                          "w-[130px] h-9 text-xs font-medium px-3 border border-transparent",
-                          config?.triggerClass
-                        )}
-                      >
-                        <SelectValue>
-                          <span className="truncate">
-                            {config?.label ?? lead.status}
+                        {lead.companyName}
+                      </button>
+                    </TableCell>
+                  )}
+                  {visibility.details && (
+                    <TableCell className="py-5 px-4">
+                      <div className="flex flex-col gap-1.5 min-w-[200px] max-w-[250px]">
+                        {lead.company?.description && (
+                          <span className="inline-flex items-start gap-1 px-2 py-1 rounded-md bg-muted/60 text-muted-foreground text-xs line-clamp-2 leading-relaxed">
+                            {lead.company.description}
                           </span>
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem
-                          value="not_contacted"
-                          className={cn(
-                            "text-xs font-medium",
-                            statusConfig.not_contacted.itemClass
-                          )}
-                        >
-                          {statusConfig.not_contacted.label}
-                        </SelectItem>
-                        <SelectItem
-                          value="in_progress"
-                          className={cn(
-                            "text-xs font-medium",
-                            statusConfig.in_progress.itemClass
-                          )}
-                        >
-                          {statusConfig.in_progress.label}
-                        </SelectItem>
-                        <SelectItem
-                          value="closed_won"
-                          className={cn(
-                            "text-xs font-medium",
-                            statusConfig.closed_won.itemClass
-                          )}
-                        >
-                          {statusConfig.closed_won.label}
-                        </SelectItem>
-                        <SelectItem
-                          value="closed_lost"
-                          className={cn(
-                            "text-xs font-medium",
-                            statusConfig.closed_lost.itemClass
-                          )}
-                        >
-                          {statusConfig.closed_lost.label}
-                        </SelectItem>
-                        <SelectItem
-                          value="ignored"
-                          className={cn(
-                            "text-xs font-medium",
-                            statusConfig.ignored.itemClass
-                          )}
-                        >
-                          {statusConfig.ignored.label}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                      );
-                    })()}
-                  </TableCell>
-                  <TableCell className="py-5 px-4 min-w-[150px] max-w-[200px]">
-                    {lead.warmConnections ? (
-                      <span className="text-xs text-muted-foreground block line-clamp-2">
-                        {lead.warmConnections}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground/50 italic">None</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="py-5 px-4 text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleOpenEmailDialog(lead)}
-                        title="Send Email"
-                        className="h-9 w-9 p-0 text-muted-foreground hover:text-success hover:bg-success/10 transition-all duration-200"
-                      >
-                        <Mail className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleOpenFeedbackDialog(lead)}
-                        title="Provide Feedback"
-                        className="h-9 w-9 p-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-200"
-                      >
-                        <MessageSquareText className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setCommentingLead(commentingLead === lead.id ? null : lead.id)}
-                        title={commentingLead === lead.id ? "Close Comments" : "View/Add Comments"}
-                        className={`h-9 w-9 p-0 relative transition-all duration-200 ${
-                          commentingLead === lead.id
-                            ? "text-success bg-success/10"
-                            : lead.comments.length > 0
-                            ? "text-primary hover:text-success hover:bg-success/10"
-                            : "text-muted-foreground hover:text-success hover:bg-success/10"
-                        }`}
-                      >
-                        {commentingLead === lead.id ? (
-                          <X className="h-4 w-4" />
-                        ) : (
-                          <>
-                            <MessageSquare className="h-4 w-4" />
-                            {lead.comments.length > 0 && (
-                              <span className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[10px] font-semibold text-primary-foreground bg-primary rounded-full">
-                                {lead.comments.length}
+                        )}
+                        {lead.company && (lead.company.industry || lead.company.location) && (
+                          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                            {lead.company.industry && lead.company.industry !== "Unknown" && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground">
+                                <Building2 className="h-3 w-3 flex-shrink-0" />
+                                <span className="truncate max-w-[120px]">{lead.company.industry}</span>
                               </span>
                             )}
-                          </>
+                            {lead.company.location && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground">
+                                <MapPin className="h-3 w-3 flex-shrink-0" />
+                                <span className="truncate max-w-[120px]">{lead.company.location}</span>
+                              </span>
+                            )}
+                          </div>
                         )}
-                      </Button>
-                    </div>
-                  </TableCell>
+                      </div>
+                    </TableCell>
+                  )}
+                  {visibility.contactPerson && (
+                    <TableCell className="py-5 px-4">
+                      <span className="text-sm">{lead.contactPerson}</span>
+                    </TableCell>
+                  )}
+                  {visibility.contactEmail && (
+                    <TableCell className="py-5 px-4 w-[180px]">
+                      {lead.contactEmail ? (
+                        <a 
+                          href={`mailto:${lead.contactEmail}`}
+                          className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5 group/email"
+                        >
+                          <Mail className="h-3.5 w-3.5 opacity-60 group-hover/email:opacity-100 group-hover/email:text-primary transition-all flex-shrink-0" />
+                          <span className="hover:underline truncate">{lead.contactEmail}</span>
+                        </a>
+                      ) : (
+                        <span className="text-sm text-muted-foreground/50 italic">No email</span>
+                      )}
+                    </TableCell>
+                  )}
+                  {visibility.role && (
+                    <TableCell className="py-5 px-4">
+                      <span className="text-sm">{lead.role}</span>
+                    </TableCell>
+                  )}
+                  {visibility.tier && (
+                    <TableCell className="py-5 px-4 w-[100px]">
+                      <TierBadge tier={lead.tier} />
+                    </TableCell>
+                  )}
+                  {visibility.status && (
+                    <TableCell className="py-5 px-4 w-[140px]">
+                      {(() => {
+                        const config = statusConfig[lead.status];
+                        return (
+                          <Select
+                            value={lead.status}
+                            onValueChange={(value) => onStatusChange(lead.id, value as LeadStatus)}
+                          >
+                            <SelectTrigger
+                              className={cn(
+                                "w-[130px] h-9 text-xs font-medium px-3 border border-transparent",
+                                config?.triggerClass
+                              )}
+                            >
+                              <SelectValue>
+                                <span className="truncate">
+                                  {config?.label ?? lead.status}
+                                </span>
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem
+                                value="not_contacted"
+                                className={cn(
+                                  "text-xs font-medium",
+                                  statusConfig.not_contacted.itemClass
+                                )}
+                              >
+                                {statusConfig.not_contacted.label}
+                              </SelectItem>
+                              <SelectItem
+                                value="in_progress"
+                                className={cn(
+                                  "text-xs font-medium",
+                                  statusConfig.in_progress.itemClass
+                                )}
+                              >
+                                {statusConfig.in_progress.label}
+                              </SelectItem>
+                              <SelectItem
+                                value="closed_won"
+                                className={cn(
+                                  "text-xs font-medium",
+                                  statusConfig.closed_won.itemClass
+                                )}
+                              >
+                                {statusConfig.closed_won.label}
+                              </SelectItem>
+                              <SelectItem
+                                value="closed_lost"
+                                className={cn(
+                                  "text-xs font-medium",
+                                  statusConfig.closed_lost.itemClass
+                                )}
+                              >
+                                {statusConfig.closed_lost.label}
+                              </SelectItem>
+                              <SelectItem
+                                value="ignored"
+                                className={cn(
+                                  "text-xs font-medium",
+                                  statusConfig.ignored.itemClass
+                                )}
+                              >
+                                {statusConfig.ignored.label}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        );
+                      })()}
+                    </TableCell>
+                  )}
+                  {visibility.warmConnections && (
+                    <TableCell className="py-5 px-4 min-w-[150px] max-w-[200px]">
+                      {lead.warmConnections ? (
+                        <span className="text-xs text-muted-foreground block line-clamp-2">
+                          {lead.warmConnections}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/50 italic">None</span>
+                      )}
+                    </TableCell>
+                  )}
+                  {visibility.actions && (
+                    <TableCell className="py-5 px-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenEmailDialog(lead)}
+                          title="Send Email"
+                          className="h-9 w-9 p-0 text-muted-foreground hover:text-success hover:bg-success/10 transition-all duration-200"
+                        >
+                          <Mail className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenFeedbackDialog(lead)}
+                          title="Provide Feedback"
+                          className="h-9 w-9 p-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-200"
+                        >
+                          <MessageSquareText className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setCommentingLead(commentingLead === lead.id ? null : lead.id)}
+                          title={commentingLead === lead.id ? "Close Comments" : "View/Add Comments"}
+                          className={`h-9 w-9 p-0 relative transition-all duration-200 ${
+                            commentingLead === lead.id
+                              ? "text-success bg-success/10"
+                              : lead.comments.length > 0
+                              ? "text-primary hover:text-success hover:bg-success/10"
+                              : "text-muted-foreground hover:text-success hover:bg-success/10"
+                          }`}
+                        >
+                          {commentingLead === lead.id ? (
+                            <X className="h-4 w-4" />
+                          ) : (
+                            <>
+                              <MessageSquare className="h-4 w-4" />
+                              {lead.comments.length > 0 && (
+                                <span className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[10px] font-semibold text-primary-foreground bg-primary rounded-full">
+                                  {lead.comments.length}
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
                 {commentingLead === lead.id && (
                   <TableRow>
-                    <TableCell colSpan={9} className="bg-success/5 p-6 border-b border-border/50">
+                    <TableCell colSpan={visibleColumnCount} className="bg-success/5 p-6 border-b border-border/50">
                       <div className="space-y-4">
                         {lead.comments.length > 0 && (
                           <div className="space-y-3">

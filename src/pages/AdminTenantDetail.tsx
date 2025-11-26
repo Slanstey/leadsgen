@@ -21,6 +21,8 @@ import { LeadsTable } from "@/components/LeadsTable";
 import { ExportDialog } from "@/components/ExportDialog";
 import { CsvUploadDialog } from "@/components/CsvUploadDialog";
 import { Lead, LeadStatus, LeadTier } from "@/types/lead";
+import { Checkbox } from "@/components/ui/checkbox";
+import { FieldVisibilityConfig, defaultFieldVisibility, LeadFieldKey } from "@/types/tenantPreferences";
 
 interface TenantDetail {
   tenant: {
@@ -71,6 +73,7 @@ const AdminTenantDetail = () => {
     fundingStage: "",
   });
   const [adminNotes, setAdminNotes] = useState("");
+  const [fieldVisibility, setFieldVisibility] = useState<FieldVisibilityConfig>(defaultFieldVisibility);
 
   useEffect(() => {
     // Check if user is admin
@@ -147,6 +150,20 @@ const AdminTenantDetail = () => {
           technologyStack: prefsData.technology_stack || "",
           fundingStage: prefsData.funding_stage || "",
         });
+
+        const existingVisibility = (prefsData as any).field_visibility as
+          | Partial<FieldVisibilityConfig>
+          | null;
+        if (existingVisibility && typeof existingVisibility === "object") {
+          setFieldVisibility({
+            ...defaultFieldVisibility,
+            ...existingVisibility,
+          });
+        } else {
+          setFieldVisibility(defaultFieldVisibility);
+        }
+      } else {
+        setFieldVisibility(defaultFieldVisibility);
       }
 
       // Load admin notes
@@ -488,6 +505,75 @@ const AdminTenantDetail = () => {
     }
   };
 
+  const handleFieldVisibilityChange = async (field: LeadFieldKey, checked: boolean) => {
+    if (!tenantId) {
+      toast.error("Tenant ID not found");
+      return;
+    }
+
+    const newVisibility: FieldVisibilityConfig = {
+      ...fieldVisibility,
+      [field]: checked,
+    };
+
+    // Optimistic update
+    setFieldVisibility(newVisibility);
+
+    try {
+      // Check if preferences already exist
+      const { data: existing, error: checkError } = await supabase
+        .from("tenant_preferences")
+        .select("id, field_visibility")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+
+      if (checkError && checkError.code !== "PGRST116") {
+        throw checkError;
+      }
+
+      const updateData = {
+        field_visibility: newVisibility,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (existing) {
+        const { error } = await supabase
+          .from("tenant_preferences")
+          .update(updateData)
+          .eq("tenant_id", tenantId);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("tenant_preferences")
+          .insert({
+            tenant_id: tenantId,
+            ...updateData,
+          });
+
+        if (error) throw error;
+      }
+
+      // Keep local tenantDetail in sync
+      setTenantDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              preferences: {
+                ...(prev.preferences || {}),
+                field_visibility: newVisibility,
+              },
+            }
+          : prev
+      );
+    } catch (error: any) {
+      console.error("Error updating field visibility:", error);
+      toast.error(error.message || "Failed to update field visibility");
+      // Revert on error
+      setFieldVisibility(fieldVisibility);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-4xl mx-auto">
@@ -803,6 +889,113 @@ const AdminTenantDetail = () => {
             </CardContent>
           </Card>
 
+          {/* Lead Field Visibility */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Lead Field Visibility</CardTitle>
+              <CardDescription>
+                Control which columns are visible on the leads dashboard and in this tenant&apos;s lead table.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-company"
+                    checked={fieldVisibility.company}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("company", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-company">Company</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-details"
+                    checked={fieldVisibility.details}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("details", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-details">Company details (industry, location, description)</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-contact-person"
+                    checked={fieldVisibility.contactPerson}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("contactPerson", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-contact-person">Contact person</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-contact-email"
+                    checked={fieldVisibility.contactEmail}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("contactEmail", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-contact-email">Email</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-role"
+                    checked={fieldVisibility.role}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("role", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-role">Role</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-tier"
+                    checked={fieldVisibility.tier}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("tier", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-tier">Tier</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-status"
+                    checked={fieldVisibility.status}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("status", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-status">Status</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-warm-connections"
+                    checked={fieldVisibility.warmConnections}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("warmConnections", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-warm-connections">Warm connections</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-actions"
+                    checked={fieldVisibility.actions}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("actions", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-actions">Actions (email, feedback, comments)</Label>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Changes are saved automatically and affect this tenant&apos;s views only.
+              </p>
+            </CardContent>
+          </Card>
+
           {/* Users */}
           <Card>
             <CardHeader>
@@ -909,6 +1102,7 @@ const AdminTenantDetail = () => {
                   leads={leads}
                   onStatusChange={handleStatusChange}
                   onAddComment={handleAddComment}
+                  fieldVisibility={fieldVisibility}
                 />
               )}
             </CardContent>
