@@ -61,7 +61,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq("id", userId)
         .single();
 
-      console.log(session, supabase);
       const result = await Promise.race([fetchPromise, timeoutPromise]);
       const { data, error } = result;
 
@@ -94,10 +93,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    let initialSessionFetched = false;
 
     // Get initial session
     supabase.auth.getSession().then(async ({ data: { session }, error }) => {
-      console.log("getting session...");
       if (!mounted) return;
 
       if (error) {
@@ -108,8 +107,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setSession(session);
       setUser(session?.user ?? null);
-      console.log("session", session);
-      console.log("session?.user", session?.user);
       if (session?.user) {
         currentUserIdRef.current = session.user.id;
         await fetchUserProfile(session.user.id);
@@ -118,12 +115,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currentUserIdRef.current = null;
         currentProfileIdRef.current = null;
       }
+
+      // Mark initial session as fetched to prevent onAuthStateChange from duplicating the fetch
+      initialSessionFetched = true;
     }).catch((error) => {
       console.error("Error in getSession:", error);
       if (mounted) {
         setLoading(false);
         currentUserIdRef.current = null;
         currentProfileIdRef.current = null;
+        initialSessionFetched = true;
       }
     });
 
@@ -132,6 +133,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
+
+      // Skip processing until initial session fetch is complete
+      // This prevents duplicate fetches on page refresh
+      if (!initialSessionFetched) {
+        return;
+      }
 
       // Only fetch profile on actual auth events, not token refreshes
       // Token refreshes happen periodically and shouldn't trigger loading states

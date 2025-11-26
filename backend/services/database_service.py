@@ -159,20 +159,24 @@ class DatabaseService:
                 if company_result.data and len(company_result.data) > 0:
                     company_data = company_result.data[0]
             
-            # Classify lead using LLM if available
-            tier = "medium"
-            tier_reason = ""
-            warm_connections = ""
+            # Use tier/tier_reason/warm_connections from lead_data if provided, otherwise classify
+            tier = lead_data.get("tier", "medium")
+            tier_reason = lead_data.get("tier_reason", "")
+            warm_connections = lead_data.get("warm_connections", "")
             
-            if self.llm_service:
+            # Only classify if tier/tier_reason are not already set
+            if not tier or tier == "medium" and not tier_reason and self.llm_service:
                 try:
                     classification = self.llm_service.classify_lead(lead_data, company_data)
-                    tier = classification.get("tier", "medium")
-                    tier_reason = classification.get("tier_reason", "")
-                    warm_connections = classification.get("warm_connections", "")
+                    tier = classification.get("tier", tier or "medium")
+                    tier_reason = classification.get("tier_reason", tier_reason)
+                    warm_connections = classification.get("warm_connections", warm_connections)
                 except Exception as e:
                     logger.error(f"Error classifying lead: {e}")
-                    # Continue with default values
+                    # Continue with existing or default values
+            
+            # Use status from lead_data if provided, otherwise default to "not_contacted"
+            status = lead_data.get("status", "not_contacted")
             
             # Create new lead (all users have tenant_id now)
             lead_insert = {
@@ -181,7 +185,7 @@ class DatabaseService:
                 "contact_person": contact_person or "Unknown",
                 "contact_email": lead_data.get("contact_email", ""),
                 "role": lead_data.get("role", ""),
-                "status": "not_contacted",
+                "status": status,
                 "tier": tier,
                 "tier_reason": tier_reason,
                 "warm_connections": warm_connections,

@@ -48,7 +48,8 @@ class WorkflowOrchestrator:
         tenant_id: str,
         max_results_per_method: int = 20,
         tenant_name: Optional[str] = None,
-        admin_notes: Optional[str] = None
+        admin_notes: Optional[str] = None,
+        preview_only: bool = False
     ) -> Dict[str, Any]:
         """
         Generate leads using specified methods and preferences
@@ -60,9 +61,10 @@ class WorkflowOrchestrator:
             max_results_per_method: Maximum results per method
             tenant_name: Name of the tenant/company
             admin_notes: Additional notes from admin dashboard
+            preview_only: If True, return leads without saving to database
             
         Returns:
-            Dictionary with results summary
+            Dictionary with results summary and leads array if preview_only=True
         """
         all_leads = []
         method_results = {}
@@ -107,9 +109,9 @@ class WorkflowOrchestrator:
         deduplicated_leads = self._deduplicate_leads(all_leads)
         logger.info(f"Total leads before deduplication: {len(all_leads)}, after: {len(deduplicated_leads)}")
         
-        # Save to database
+        # Save to database only if not in preview mode
         save_results = {"leads_created": 0, "companies_created": 0}
-        if self.database_service and deduplicated_leads:
+        if not preview_only and self.database_service and deduplicated_leads:
             try:
                 save_results = self.database_service.save_leads_and_companies(
                     deduplicated_leads,
@@ -121,14 +123,38 @@ class WorkflowOrchestrator:
                 logger.error(error_msg, exc_info=True)
                 errors.append(error_msg)
         
-        return {
-            "success": save_results["leads_created"] > 0,
-            "leads_created": save_results["leads_created"],
-            "companies_created": save_results["companies_created"],
+        # Prepare return value
+        result = {
+            "success": len(deduplicated_leads) > 0 if preview_only else save_results["leads_created"] > 0,
+            "leads_created": save_results["leads_created"] if not preview_only else 0,
+            "companies_created": save_results["companies_created"] if not preview_only else 0,
             "method_results": method_results,
             "total_leads_found": len(deduplicated_leads),
             "errors": errors if errors else None
         }
+        
+        # If preview mode, include the leads array
+        if preview_only:
+            # Format leads for frontend (ensure all required fields are present)
+            formatted_leads = []
+            for lead in deduplicated_leads:
+                formatted_lead = {
+                    "company_name": lead.get("company_name", ""),
+                    "contact_person": lead.get("contact_person", ""),
+                    "contact_email": lead.get("contact_email", ""),
+                    "role": lead.get("role", ""),
+                    "status": lead.get("status", "not_contacted"),
+                    "tier": lead.get("tier", "medium"),
+                }
+                # Add optional fields if present
+                if lead.get("tier_reason"):
+                    formatted_lead["tier_reason"] = lead.get("tier_reason")
+                if lead.get("warm_connections"):
+                    formatted_lead["warm_connections"] = lead.get("warm_connections")
+                formatted_leads.append(formatted_lead)
+            result["leads"] = formatted_leads
+        
+        return result
     
     def _process_method(
         self,

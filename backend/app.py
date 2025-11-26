@@ -196,10 +196,22 @@ class GetPreferencesResponse(BaseModel):
 
 class GenerateLeadsRequest(BaseModel):
     tenant_id: str
+    preview_only: Optional[bool] = False
 
 class GenerateLeadsResponse(BaseModel):
     success: bool
     leads_created: int
+    leads: Optional[List[Dict[str, Any]]] = None
+    error: Optional[str] = None
+
+class ReleaseLeadsRequest(BaseModel):
+    tenant_id: str
+    leads: List[Dict[str, Any]]
+
+class ReleaseLeadsResponse(BaseModel):
+    success: bool
+    leads_created: int
+    companies_created: int
     error: Optional[str] = None
 
 class SignUpRequest(BaseModel):
@@ -1248,6 +1260,7 @@ async def generate_leads(
             )
         
         # Use workflow orchestrator to generate leads
+        preview_only = request.preview_only or False
         
         result = workflow_orchestrator.generate_leads(
             methods=lead_generation_methods,
@@ -1255,7 +1268,8 @@ async def generate_leads(
             tenant_id=request.tenant_id,
             max_results_per_method=5,  # Generate 5 leads per method
             tenant_name=tenant_name,
-            admin_notes=admin_notes
+            admin_notes=admin_notes,
+            preview_only=preview_only
         )
         
         # Build error message if any
@@ -1266,6 +1280,7 @@ async def generate_leads(
         return GenerateLeadsResponse(
             success=result["success"],
             leads_created=result["leads_created"],
+            leads=result.get("leads") if preview_only else None,
             error=error_msg
         )
         
@@ -1280,6 +1295,58 @@ async def generate_leads(
 @app.options("/api/admin/generate-leads")
 async def options_admin_generate_leads():
     """Handle CORS preflight for admin generate leads endpoint"""
+    return JSONResponse(
+        status_code=200,
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
+
+@app.post("/api/admin/release-leads", response_model=ReleaseLeadsResponse)
+async def release_leads(
+    request: ReleaseLeadsRequest,
+    user_info: Dict[str, Any] = Depends(verify_admin)
+):
+    """Release previewed leads to the database"""
+    try:
+        if not request.leads or len(request.leads) == 0:
+            return ReleaseLeadsResponse(
+                success=False,
+                leads_created=0,
+                companies_created=0,
+                error="No leads provided to release"
+            )
+        
+        # Use database service to save leads
+        save_results = database_service.save_leads_and_companies(
+            leads_data=request.leads,
+            tenant_id=request.tenant_id
+        )
+        
+        return ReleaseLeadsResponse(
+            success=save_results["leads_created"] > 0,
+            leads_created=save_results["leads_created"],
+            companies_created=save_results["companies_created"],
+            error=None
+        )
+        
+    except Exception as e:
+        logger.error(f"Error releasing leads: {e}", exc_info=True)
+        return ReleaseLeadsResponse(
+            success=False,
+            leads_created=0,
+            companies_created=0,
+            error=str(e)
+        )
+
+@app.options("/api/admin/release-leads")
+async def options_admin_release_leads():
+    """Handle CORS preflight for admin release leads endpoint"""
     return JSONResponse(
         status_code=200,
         content={},
