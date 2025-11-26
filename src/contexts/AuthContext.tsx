@@ -105,6 +105,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setSession(session);
       setUser(session?.user ?? null);
+      console.log("session", session);
+      console.log("session?.user", session?.user);
       if (session?.user) {
         currentUserIdRef.current = session.user.id;
         await fetchUserProfile(session.user.id);
@@ -148,7 +150,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (!isTokenRefresh && (isSignIn || userChanged)) {
         // Only fetch if it's a real auth event and user changed
         currentUserIdRef.current = userId;
-        await fetchUserProfile(userId);
+        if (userId) {
+          await fetchUserProfile(userId);
+        }
+        else {
+          console.log("userId is null where added the if");
+        }
       } else if (isTokenRefresh) {
         // Token refresh happened but user is the same - ensure loading is false
         // Don't fetch profile again, just ensure we're not in loading state
