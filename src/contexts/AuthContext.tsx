@@ -50,9 +50,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(true);
       }
 
-      // Add timeout to prevent infinite loading (30 seconds)
+      // Add timeout to prevent infinite loading
       const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: new Error('Profile fetch timeout - please check your connection') }), 30000)
+        setTimeout(() => resolve({ data: null, error: new Error('Profile fetch timeout') }), 10000)
       );
 
       const fetchPromise = supabase
@@ -128,44 +128,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
 
-      try {
-        // Only fetch profile on actual auth events, not token refreshes
-        // Token refreshes happen periodically and shouldn't trigger loading states
-        const isTokenRefresh = event === 'TOKEN_REFRESHED';
-        const isSignIn = event === 'SIGNED_IN';
-        const isSignOut = event === 'SIGNED_OUT';
-        const userId = session?.user?.id ?? null;
-        const userChanged = userId !== currentUserIdRef.current;
+      // Only fetch profile on actual auth events, not token refreshes
+      // Token refreshes happen periodically and shouldn't trigger loading states
+      const isTokenRefresh = event === 'TOKEN_REFRESHED';
+      const isSignIn = event === 'SIGNED_IN';
+      const isSignOut = event === 'SIGNED_OUT';
+      const userId = session?.user?.id ?? null;
+      const userChanged = userId !== currentUserIdRef.current;
 
-        setSession(session);
-        setUser(session?.user ?? null);
+      setSession(session);
+      setUser(session?.user ?? null);
 
-        if (isSignOut || !session?.user) {
-          setProfile(null);
+      if (isSignOut || !session?.user) {
+        setProfile(null);
+        setLoading(false);
+        currentUserIdRef.current = null;
+        currentProfileIdRef.current = null;
+        fetchInProgressRef.current = false;
+      } else if (!isTokenRefresh && (isSignIn || userChanged)) {
+        // Only fetch if it's a real auth event and user changed
+        currentUserIdRef.current = userId;
+        await fetchUserProfile(userId);
+      } else if (isTokenRefresh) {
+        // Token refresh happened but user is the same - ensure loading is false
+        // Don't fetch profile again, just ensure we're not in loading state
+        // Only set loading to false if we already have a profile, otherwise don't change loading state
+        if (currentProfileIdRef.current && currentProfileIdRef.current === userId) {
           setLoading(false);
-          currentUserIdRef.current = null;
-          currentProfileIdRef.current = null;
-          fetchInProgressRef.current = false;
-        } else if (!isTokenRefresh && (isSignIn || userChanged)) {
-          // Only fetch if it's a real auth event and user changed
-          currentUserIdRef.current = userId;
-          await fetchUserProfile(userId);
-        } else if (isTokenRefresh) {
-          // Token refresh happened but user is the same - ensure loading is false
-          // Don't fetch profile again, just ensure we're not in loading state
-          // Only set loading to false if we already have a profile, otherwise don't change loading state
-          if (currentProfileIdRef.current && currentProfileIdRef.current === userId) {
-            setLoading(false);
-          }
-        } else {
-          // Any other event - ensure loading is false if we have a profile
-          if (currentProfileIdRef.current && currentProfileIdRef.current === userId && !fetchInProgressRef.current) {
-            setLoading(false);
-          }
         }
-      } catch (error) {
-        console.error("Error in auth state change handler:", error);
-        if (mounted) {
+      } else {
+        // Any other event - ensure loading is false if we have a profile
+        if (currentProfileIdRef.current && currentProfileIdRef.current === userId && !fetchInProgressRef.current) {
           setLoading(false);
         }
       }
@@ -178,27 +171,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-      if (error) throw error;
+    if (error) throw error;
 
-      // Check if email is verified
-      if (data.user && !data.user.email_confirmed_at) {
-        // Sign out the user immediately if email is not verified
-        await supabase.auth.signOut();
-        throw new Error("Please verify your email address before signing in. Check your inbox for the verification link.");
-      }
+    // Check if email is verified
+    if (data.user && !data.user.email_confirmed_at) {
+      // Sign out the user immediately if email is not verified
+      await supabase.auth.signOut();
+      throw new Error("Please verify your email address before signing in. Check your inbox for the verification link.");
+    }
 
-      if (data.user) {
-        await fetchUserProfile(data.user.id);
-      }
-    } catch (error) {
-      console.error("Sign in error:", error);
-      throw error; // Re-throw to let the caller handle it
+    if (data.user) {
+      await fetchUserProfile(data.user.id);
     }
   };
 
