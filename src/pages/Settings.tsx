@@ -6,6 +6,7 @@ import { ArrowLeft, Loader2, Link2, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { Tables } from "@/lib/supabaseUtils";
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -81,7 +82,7 @@ const Settings = () => {
           if (data.success) {
             // Reload LinkedIn profile data
             const { data: userProfile, error: profileError } = await supabase
-              .from("user_profiles")
+              .from(Tables.USER_PROFILES)
               .select("linkedin_profile_id, linkedin_profile_url, linkedin_first_name, linkedin_last_name, linkedin_headline, linkedin_connected_at")
               .eq("id", profile.id)
               .single();
@@ -114,7 +115,7 @@ const Settings = () => {
       try {
         // Load LinkedIn profile connection status
         const { data: userProfile, error: profileError } = await supabase
-          .from("user_profiles")
+          .from(Tables.USER_PROFILES)
           .select("linkedin_profile_id, linkedin_profile_url, linkedin_first_name, linkedin_last_name, linkedin_headline, linkedin_connected_at")
           .eq("id", profile.id)
           .single();
@@ -216,7 +217,7 @@ const Settings = () => {
 
       // Clear LinkedIn data from user profile
       const { error } = await supabase
-        .from("user_profiles")
+        .from(Tables.USER_PROFILES)
         .update({
           linkedin_access_token: null,
           linkedin_refresh_token: null,

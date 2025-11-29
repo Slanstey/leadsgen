@@ -6,10 +6,11 @@ import { ArrowLeft, Building2, MapPin, DollarSign, Briefcase, User, Loader2 } fr
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import type { Tables } from "@/integrations/supabase/types";
+import type { Tables as DatabaseTables } from "@/integrations/supabase/types";
+import { Tables } from "@/lib/supabaseUtils";
 
-type Company = Tables<"companies">;
-type Executive = Tables<"executives">;
+type Company = DatabaseTables<"companies">;
+type Executive = DatabaseTables<"executives">;
 type NewsItem = {
   id: string;
   title: string;
@@ -42,7 +43,7 @@ const CompanyDetail = () => {
         
         // Fetch company
         const { data: companyData, error: companyError } = await supabase
-          .from("companies")
+          .from(Tables.COMPANIES)
           .select("*")
           .eq("name", decodedName)
           .single();
@@ -52,7 +53,7 @@ const CompanyDetail = () => {
           console.error("Searched for company name:", decodedName);
           // Try to find similar companies for debugging
           const { data: similar } = await supabase
-            .from("companies")
+            .from(Tables.COMPANIES)
             .select("name")
             .limit(5);
           console.log("Available companies:", similar);
@@ -69,7 +70,7 @@ const CompanyDetail = () => {
 
         // Fetch executives for this company
         const { data: executivesData, error: executivesError } = await supabase
-          .from("executives")
+          .from(Tables.EXECUTIVES)
           .select("*")
           .eq("company_id", companyData.id)
           .order("name");

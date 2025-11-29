@@ -28,6 +28,7 @@ import { Upload, Loader2, FileText, AlertCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from "xlsx";
+import { Tables } from "@/lib/supabaseUtils";
 
 interface CsvUploadDialogProps {
   open: boolean;
@@ -722,7 +723,7 @@ export function CsvUploadDialog({
       // Fetch all companies for the tenant and do case-insensitive matching
       // This is more reliable than individual queries
       const { data: allTenantCompanies, error: companiesFetchError } = await supabase
-        .from("companies")
+        .from(Tables.COMPANIES)
         .select("id, name")
         .eq("tenant_id", tenantId);
 
@@ -797,7 +798,7 @@ export function CsvUploadDialog({
           const companyBatch = companiesArray.slice(i, i + companyBatchSize);
 
           const { data: newCompanies, error: insertError } = await supabase
-            .from("companies")
+            .from(Tables.COMPANIES)
             .insert(companyBatch)
             .select("id, name");
 
@@ -813,7 +814,7 @@ export function CsvUploadDialog({
                   let checkCompany = null;
 
                   const { data: exactCheck } = await supabase
-                    .from("companies")
+                    .from(Tables.COMPANIES)
                     .select("id, name")
                     .eq("tenant_id", tenantId)
                     .eq("name", normalizedName)
@@ -825,7 +826,7 @@ export function CsvUploadDialog({
                   } else {
                     // Try case-insensitive match
                     const { data: allCompanies } = await supabase
-                      .from("companies")
+                      .from(Tables.COMPANIES)
                       .select("id, name")
                       .eq("tenant_id", tenantId);
 
@@ -847,7 +848,7 @@ export function CsvUploadDialog({
                   } else {
                     // Try to insert
                     const { data: insertedCompany, error: singleError } = await supabase
-                      .from("companies")
+                      .from(Tables.COMPANIES)
                       .insert(companyData)
                       .select("id, name")
                       .single();
@@ -855,7 +856,7 @@ export function CsvUploadDialog({
                     if (singleError && singleError.code === "23505") {
                       // Still duplicate, check one more time with case-insensitive search
                       const { data: allCompaniesRetry } = await supabase
-                        .from("companies")
+                        .from(Tables.COMPANIES)
                         .select("id, name")
                         .eq("tenant_id", tenantId);
 
@@ -933,7 +934,7 @@ export function CsvUploadDialog({
 
           // First try exact match (case-sensitive)
           const { data: exactMatch } = await supabase
-            .from("leads")
+            .from(Tables.LEADS)
             .select("id, company_name, contact_person")
             .eq("tenant_id", tenantId)
             .eq("company_name", normalizedCompanyName)
@@ -946,7 +947,7 @@ export function CsvUploadDialog({
           } else {
             // Try case-insensitive match as fallback
             const { data: allLeads } = await supabase
-              .from("leads")
+              .from(Tables.LEADS)
               .select("id, company_name, contact_person")
               .eq("tenant_id", tenantId);
 
@@ -1000,7 +1001,7 @@ export function CsvUploadDialog({
 
           try {
             const { data: insertedLeads, error: leadsError } = await supabase
-              .from("leads")
+              .from(Tables.LEADS)
               .insert(batch as any)
               .select();
 
@@ -1016,7 +1017,7 @@ export function CsvUploadDialog({
                     // Try exact match first
                     let existingLead = null;
                     const { data: exactMatch } = await supabase
-                      .from("leads")
+                      .from(Tables.LEADS)
                       .select("id")
                       .eq("tenant_id", tenantId)
                       .eq("company_name", normalizedCompanyName)
@@ -1029,7 +1030,7 @@ export function CsvUploadDialog({
                     } else {
                       // Try case-insensitive match
                       const { data: allLeads } = await supabase
-                        .from("leads")
+                        .from(Tables.LEADS)
                         .select("id, company_name, contact_person")
                         .eq("tenant_id", tenantId);
 
@@ -1046,7 +1047,7 @@ export function CsvUploadDialog({
 
                     if (!existingLead) {
                       const { data: newLead } = await supabase
-                        .from("leads")
+                        .from(Tables.LEADS)
                         .insert(lead as any)
                         .select()
                         .single();
