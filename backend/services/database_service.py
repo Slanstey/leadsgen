@@ -7,6 +7,7 @@ from supabase import Client
 import logging
 from datetime import datetime
 from utils.location_utils import extract_city_country
+from utils.supabase_utils import Tables
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ class DatabaseService:
         """Get existing company or create new one"""
         try:
             # Check if company exists
-            existing = self.supabase.table("companies").select("id").eq(
+            existing = self.supabase.table(Tables.COMPANIES).select("id").eq(
                 "tenant_id", tenant_id
             ).eq("name", company_name).limit(1).execute()
             
@@ -117,7 +118,7 @@ class DatabaseService:
                 "updated_at": datetime.utcnow().isoformat()
             }
             
-            result = self.supabase.table("companies").insert(company_insert).execute()
+            result = self.supabase.table(Tables.COMPANIES).insert(company_insert).execute()
             
             if result.data and len(result.data) > 0:
                 return result.data[0]["id"]
@@ -139,7 +140,7 @@ class DatabaseService:
             contact_person = lead_data.get("contact_person", "").strip()
             
             if contact_person:
-                existing = self.supabase.table("leads").select("id").eq(
+                existing = self.supabase.table(Tables.LEADS).select("id").eq(
                     "tenant_id", tenant_id
                 ).eq("company_name", company_name).eq(
                     "contact_person", contact_person
@@ -152,7 +153,7 @@ class DatabaseService:
             # Get company data for classification
             company_data = None
             if company_name:
-                company_result = self.supabase.table("companies").select("*").eq(
+                company_result = self.supabase.table(Tables.COMPANIES).select("*").eq(
                     "tenant_id", tenant_id
                 ).eq("name", company_name).limit(1).execute()
                 
@@ -193,7 +194,7 @@ class DatabaseService:
                 "updated_at": datetime.utcnow().isoformat()
             }
             
-            result = self.supabase.table("leads").insert(lead_insert).execute()
+            result = self.supabase.table(Tables.LEADS).insert(lead_insert).execute()
             
             if result.data and len(result.data) > 0:
                 return result.data[0]["id"]
