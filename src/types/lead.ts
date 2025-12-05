@@ -19,6 +19,7 @@ export interface Lead {
   tier: LeadTier;
   tierReason?: string;
   warmConnections?: string;
+  isConnectedToTenant?: boolean;
   comments: Comment[];
   createdAt: Date;
   updatedAt: Date;

@@ -50,6 +50,7 @@ export function ExportDialog({
       "Role",
       "Status",
       "Tier",
+      "Is Connected to Tenant (LinkedIn)",
       "Comments Count",
       "Created At",
       "Updated At",
@@ -63,6 +64,7 @@ export function ExportDialog({
       lead.role,
       lead.status,
       lead.tier.toString(),
+      lead.isConnectedToTenant ? "Yes" : "No",
       lead.comments.length.toString(),
       lead.createdAt.toLocaleDateString(),
       lead.updatedAt.toLocaleDateString(),
@@ -100,6 +102,7 @@ export function ExportDialog({
       Role: lead.role,
       Status: lead.status,
       Tier: lead.tier,
+      "Is Connected to Tenant (LinkedIn)": lead.isConnectedToTenant ? "Yes" : "No",
       "Comments Count": lead.comments.length,
       "Created At": lead.createdAt.toLocaleDateString(),
       "Updated At": lead.updatedAt.toLocaleDateString(),
@@ -124,6 +127,7 @@ export function ExportDialog({
       { wch: 20 }, // Role
       { wch: 15 }, // Status
       { wch: 5 }, // Tier
+      { wch: 30 }, // Is Connected to Tenant (LinkedIn)
       { wch: 15 }, // Comments Count
       { wch: 12 }, // Created At
       { wch: 12 }, // Updated At

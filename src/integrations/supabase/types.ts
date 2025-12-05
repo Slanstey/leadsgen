@@ -152,6 +152,7 @@ export type Database = {
           contact_person: string
           created_at: string | null
           id: string
+          is_connected_to_tenant: boolean
           role: string
           status: Database["public"]["Enums"]["lead_status"]
           tenant_id: string
@@ -164,6 +165,7 @@ export type Database = {
           contact_person: string
           created_at?: string | null
           id?: string
+          is_connected_to_tenant?: boolean
           role: string
           status?: Database["public"]["Enums"]["lead_status"]
           tenant_id: string
@@ -176,6 +178,7 @@ export type Database = {
           contact_person?: string
           created_at?: string | null
           id?: string
+          is_connected_to_tenant?: boolean
           role?: string
           status?: Database["public"]["Enums"]["lead_status"]
           tenant_id?: string

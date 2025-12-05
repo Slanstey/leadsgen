@@ -7,6 +7,7 @@ export type LeadFieldKey =
   | "tier"
   | "status"
   | "warmConnections"
+  | "isConnectedToTenant"
   | "actions";
 
 export type FieldVisibilityConfig = Record<LeadFieldKey, boolean>;
@@ -20,6 +21,7 @@ export const defaultFieldVisibility: FieldVisibilityConfig = {
   tier: true,
   status: true,
   warmConnections: true,
+  isConnectedToTenant: true,
   actions: true,
 };
 

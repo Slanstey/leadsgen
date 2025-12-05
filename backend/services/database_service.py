@@ -179,6 +179,13 @@ class DatabaseService:
             status = lead_data.get("status", "not_contacted")
             
             # Create new lead (all users have tenant_id now)
+            # Handle is_connected_to_tenant - convert string to boolean if needed
+            is_connected_to_tenant = lead_data.get("is_connected_to_tenant", False)
+            if isinstance(is_connected_to_tenant, str):
+                is_connected_to_tenant = is_connected_to_tenant.lower() in ("true", "1", "yes", "y")
+            elif not isinstance(is_connected_to_tenant, bool):
+                is_connected_to_tenant = False
+            
             lead_insert = {
                 "tenant_id": tenant_id,
                 "company_name": company_name,
@@ -189,6 +196,7 @@ class DatabaseService:
                 "tier": tier,
                 "tier_reason": tier_reason,
                 "warm_connections": warm_connections,
+                "is_connected_to_tenant": is_connected_to_tenant,
                 "created_at": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat()
             }

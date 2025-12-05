@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { MessageSquare, X, Send, Mail, MapPin, Building2, ArrowUpDown, ArrowUp, ArrowDown, MessageSquareText } from "lucide-react";
+import { MessageSquare, X, Send, Mail, MapPin, Building2, ArrowUpDown, ArrowUp, ArrowDown, MessageSquareText, Link2 } from "lucide-react";
 import { TierBadge } from "@/components/TierBadge";
 import { toast } from "sonner";
 import { EmailDialog } from "@/components/EmailDialog";
@@ -332,6 +332,11 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                   Warm Connections
                 </TableHead>
               )}
+              {visibility.isConnectedToTenant && (
+                <TableHead className="h-14 font-semibold text-sm w-[140px]">
+                  LinkedIn Connected
+                </TableHead>
+              )}
               {visibility.actions && (
                 <TableHead className="h-14 font-semibold text-sm text-right">
                   Actions
@@ -495,6 +500,20 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                         </span>
                       ) : (
                         <span className="text-xs text-muted-foreground/50 italic">None</span>
+                      )}
+                    </TableCell>
+                  )}
+                  {visibility.isConnectedToTenant && (
+                    <TableCell className="py-5 px-4 w-[140px]">
+                      {lead.isConnectedToTenant ? (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 text-xs font-medium">
+                          <Link2 className="h-3 w-3" />
+                          Connected
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/60 text-muted-foreground text-xs">
+                          Not Connected
+                        </span>
                       )}
                     </TableCell>
                   )}

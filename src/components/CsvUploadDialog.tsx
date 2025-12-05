@@ -61,6 +61,7 @@ interface ProcessedLeadRecord {
     tier: "good" | "medium" | "bad";
     tier_reason?: string;
     warm_connections?: string;
+    is_connected_to_tenant?: boolean;
     created_at: string;
     updated_at: string;
   };
@@ -88,6 +89,7 @@ export function CsvUploadDialog({
     tier: string;
     tier_reason: string;
     warm_connections: string;
+    is_connected_to_tenant: string;
     // Company fields
     company_location: string;
     company_industry: string;
@@ -103,6 +105,7 @@ export function CsvUploadDialog({
     tier: "",
     tier_reason: "",
     warm_connections: "",
+    is_connected_to_tenant: "",
     company_location: "",
     company_industry: "",
     company_sub_industry: "",
@@ -110,6 +113,7 @@ export function CsvUploadDialog({
     company_description: "",
   });
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const [stagedLeads, setStagedLeads] = useState<ProcessedLeadRecord[]>([]);
 
   const requiredLeadFields = [
@@ -124,6 +128,7 @@ export function CsvUploadDialog({
     { key: "tier", label: "Tier (good/medium/bad)", required: false },
     { key: "tier_reason", label: "Tier Reason", required: false },
     { key: "warm_connections", label: "Warm Connections", required: false },
+    { key: "is_connected_to_tenant", label: "Is Connected to Tenant (LinkedIn)", required: false },
   ];
 
   const optionalCompanyFields = [
@@ -556,6 +561,13 @@ export function CsvUploadDialog({
           ? row[columnMapping.warm_connections]?.toString().trim() || ""
           : "";
 
+        // Handle is_connected_to_tenant - convert string to boolean
+        let isConnectedToTenant = false;
+        if (columnMapping.is_connected_to_tenant) {
+          const rawValue = row[columnMapping.is_connected_to_tenant]?.toString().trim().toLowerCase() || "";
+          isConnectedToTenant = rawValue === "true" || rawValue === "1" || rawValue === "yes" || rawValue === "y";
+        }
+
         // Extract company fields (use defaults if not mapped)
         // Extract city and country from location/address field
         const companyLocationRaw = columnMapping.company_location
@@ -616,6 +628,7 @@ export function CsvUploadDialog({
             tier,
             ...(tierReason && { tier_reason: tierReason }),
             ...(warmConnections && { warm_connections: warmConnections }),
+            ...(isConnectedToTenant && { is_connected_to_tenant: isConnectedToTenant }),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },
@@ -702,8 +715,9 @@ export function CsvUploadDialog({
       return;
     }
 
-    console.log("[CSV Upload] Setting uploading state to true");
+      console.log("[CSV Upload] Setting uploading state to true");
     setIsUploading(true);
+    setUploadProgress({ current: 0, total: 0 });
 
     try {
       // Track unique companies by name
@@ -914,56 +928,44 @@ export function CsvUploadDialog({
       console.log("[CSV Upload] Processing", validLeads.length, "leads with valid companies");
 
       // Step 6: Check which leads already exist (based on tenant_id + company_name + contact_person)
-      // Different companies can have the same contact person - duplicates are only within the same tenant + company + contact person
-      // Use normalized values for consistent matching
+      // Optimized: Fetch all existing leads for this tenant once, then do case-insensitive matching in memory
+      // This is much faster than individual queries per lead
       const existingLeadsSet = new Set<string>();
-      const leadBatchSize = 100;
+      
+      console.log("[CSV Upload] Fetching existing leads for duplicate check...");
+      const { data: allExistingLeads, error: existingLeadsError } = await supabase
+        .from("leads")
+        .select("company_name, contact_person")
+        .eq("tenant_id", tenantId);
 
-      // Process leads in batches for duplicate checking
-      for (let i = 0; i < validLeads.length; i += leadBatchSize) {
-        const batch = validLeads.slice(i, i + leadBatchSize);
+      if (existingLeadsError) {
+        console.error("[CSV Upload] Error fetching existing leads:", existingLeadsError);
+        throw existingLeadsError;
+      }
 
-        // Check each lead individually to handle case-insensitive matching
-        for (const leadItem of batch) {
-          const normalizedCompanyName = leadItem.company.name.trim();
-          const normalizedContactPerson = leadItem.lead.contact_person.trim();
-          // Include tenant_id in the key to ensure uniqueness is per-tenant
-          // Same contact person can exist at different companies (different company_name values)
-          const key = `${tenantId}|||${normalizedCompanyName.toLowerCase()}|||${normalizedContactPerson.toLowerCase()}`;
-
-          // First try exact match (case-sensitive)
-          const { data: exactMatch } = await supabase
-            .from("leads")
-            .select("id, company_name, contact_person")
-            .eq("tenant_id", tenantId)
-            .eq("company_name", normalizedCompanyName)
-            .eq("contact_person", normalizedContactPerson)
-            .limit(1)
-            .maybeSingle();
-
-          if (exactMatch) {
-            existingLeadsSet.add(key);
-          } else {
-            // Try case-insensitive match as fallback
-            const { data: allLeads } = await supabase
-              .from("leads")
-              .select("id, company_name, contact_person")
-              .eq("tenant_id", tenantId);
-
-            if (allLeads) {
-              const caseInsensitiveMatch = allLeads.find(
-                l => l.company_name.trim().toLowerCase() === normalizedCompanyName.toLowerCase() &&
-                  l.contact_person.trim().toLowerCase() === normalizedContactPerson.toLowerCase()
-              );
-              if (caseInsensitiveMatch) {
-                existingLeadsSet.add(key);
-              }
-            }
-          }
+      // Build a normalized set of existing leads for fast lookup
+      const existingLeadsNormalized = new Set<string>();
+      if (allExistingLeads) {
+        for (const lead of allExistingLeads) {
+          const normalizedCompany = (lead.company_name || "").trim().toLowerCase();
+          const normalizedContact = (lead.contact_person || "").trim().toLowerCase();
+          const key = `${tenantId}|||${normalizedCompany}|||${normalizedContact}`;
+          existingLeadsNormalized.add(key);
         }
       }
 
-      console.log("[CSV Upload] Found", existingLeadsSet.size, "existing leads");
+      // Check all staged leads against existing leads in one pass
+      for (const leadItem of validLeads) {
+        const normalizedCompanyName = leadItem.company.name.trim().toLowerCase();
+        const normalizedContactPerson = leadItem.lead.contact_person.trim().toLowerCase();
+        const key = `${tenantId}|||${normalizedCompanyName}|||${normalizedContactPerson}`;
+        
+        if (existingLeadsNormalized.has(key)) {
+          existingLeadsSet.add(key);
+        }
+      }
+
+      console.log("[CSV Upload] Found", existingLeadsSet.size, "existing leads out of", validLeads.length, "total");
 
       // Step 7: Filter out existing leads and prepare new leads for insertion
       // Use normalized company names from the database
@@ -993,10 +995,14 @@ export function CsvUploadDialog({
       console.log("[CSV Upload] Inserting", leadsToInsert.length, "new leads");
 
       // Step 8: Insert new leads in batches
+      // Increased batch size for better performance with large uploads
       if (leadsToInsert.length > 0) {
-        const batchSize = 50;
+        const batchSize = 200;
+        setUploadProgress({ current: 0, total: leadsToInsert.length });
+        
         for (let i = 0; i < leadsToInsert.length; i += batchSize) {
           const batch = leadsToInsert.slice(i, i + batchSize);
+          setUploadProgress({ current: Math.min(i + batchSize, leadsToInsert.length), total: leadsToInsert.length });
 
           try {
             const { data: insertedLeads, error: leadsError } = await supabase
@@ -1005,61 +1011,42 @@ export function CsvUploadDialog({
               .select();
 
             if (leadsError) {
-              // If it's a unique constraint violation, insert one by one
+              // If it's a unique constraint violation, try inserting one by one
+              // This should be rare since we already checked for duplicates
               if (leadsError.code === "23505") {
+                console.log("[CSV Upload] Unique constraint violation, inserting leads individually...");
                 for (const lead of batch) {
                   try {
-                    // Double-check that the lead doesn't exist (with case-insensitive matching)
-                    const normalizedCompanyName = (lead.company_name || "").trim();
-                    const normalizedContactPerson = (lead.contact_person || "").trim();
+                    // Use the existing leads set we already fetched for fast lookup
+                    const normalizedCompanyName = (lead.company_name || "").trim().toLowerCase();
+                    const normalizedContactPerson = (lead.contact_person || "").trim().toLowerCase();
+                    const key = `${tenantId}|||${normalizedCompanyName}|||${normalizedContactPerson}`;
 
-                    // Try exact match first
-                    let existingLead = null;
-                    const { data: exactMatch } = await supabase
-                      .from("leads")
-                      .select("id")
-                      .eq("tenant_id", tenantId)
-                      .eq("company_name", normalizedCompanyName)
-                      .eq("contact_person", normalizedContactPerson)
-                      .limit(1)
-                      .maybeSingle();
-
-                    if (exactMatch) {
-                      existingLead = exactMatch;
-                    } else {
-                      // Try case-insensitive match
-                      const { data: allLeads } = await supabase
-                        .from("leads")
-                        .select("id, company_name, contact_person")
-                        .eq("tenant_id", tenantId);
-
-                      if (allLeads) {
-                        const caseInsensitiveMatch = allLeads.find(
-                          l => l.company_name.trim().toLowerCase() === normalizedCompanyName.toLowerCase() &&
-                            l.contact_person.trim().toLowerCase() === normalizedContactPerson.toLowerCase()
-                        );
-                        if (caseInsensitiveMatch) {
-                          existingLead = { id: caseInsensitiveMatch.id };
-                        }
-                      }
+                    // Check against our existing leads set first (fast)
+                    if (existingLeadsSet.has(key)) {
+                      leadsSkipped++;
+                      continue;
                     }
 
-                    if (!existingLead) {
-                      const { data: newLead } = await supabase
-                        .from("leads")
-                        .insert(lead as any)
-                        .select()
-                        .single();
+                    // If not in our set, try inserting (might be a race condition)
+                    const { data: newLead, error: insertError } = await supabase
+                      .from("leads")
+                      .insert(lead as any)
+                      .select()
+                      .single();
 
-                      if (newLead) {
-                        leadsCreated++;
-                        // Classify lead asynchronously
-                        classifyLead(newLead.id, tenantId).catch(err => {
-                          console.error("[CSV Upload] Error classifying lead:", err);
-                        });
-                      }
-                    } else {
+                    if (newLead) {
+                      leadsCreated++;
+                      // Add to existing set to avoid future duplicates in this batch
+                      existingLeadsSet.add(key);
+                      // Classify lead asynchronously
+                      classifyLead(newLead.id, tenantId).catch(err => {
+                        console.error("[CSV Upload] Error classifying lead:", err);
+                      });
+                    } else if (insertError && insertError.code === "23505") {
+                      // Still a duplicate, skip it
                       leadsSkipped++;
+                      existingLeadsSet.add(key);
                     }
                   } catch (err: any) {
                     console.error("[CSV Upload] Error inserting individual lead:", err);
@@ -1441,6 +1428,7 @@ export function CsvUploadDialog({
                       <TableHead>Role</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Tier</TableHead>
+                      <TableHead>LinkedIn Connected</TableHead>
                       <TableHead className="w-[60px] text-right">Remove</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1456,6 +1444,9 @@ export function CsvUploadDialog({
                         </TableCell>
                         <TableCell className="capitalize text-xs">
                           {item.lead.tier}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {item.lead.is_connected_to_tenant ? "Yes" : "No"}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -1497,7 +1488,9 @@ export function CsvUploadDialog({
             {isUploading ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Uploading...
+                {uploadProgress.total > 0 
+                  ? `Uploading leads... ${uploadProgress.current}/${uploadProgress.total}`
+                  : "Uploading..."}
               </>
             ) : (
               <>

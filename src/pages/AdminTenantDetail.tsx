@@ -289,6 +289,7 @@ const AdminTenantDetail = () => {
           tier: (lead.tier as LeadTier) || "medium",
           tierReason: lead.tier_reason,
           warmConnections: lead.warm_connections,
+          isConnectedToTenant: lead.is_connected_to_tenant,
           comments: leadComments,
           createdAt: new Date(lead.created_at || ""),
           updatedAt: new Date(lead.updated_at || ""),
@@ -978,6 +979,16 @@ const AdminTenantDetail = () => {
                     }
                   />
                   <Label htmlFor="field-warm-connections">Warm connections</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-is-connected-to-tenant"
+                    checked={fieldVisibility.isConnectedToTenant}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("isConnectedToTenant", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-is-connected-to-tenant">LinkedIn Connected</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox
