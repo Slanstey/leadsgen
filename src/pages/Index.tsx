@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ExportDialog } from "@/components/ExportDialog";
 import { FieldVisibilityConfig, defaultFieldVisibility } from "@/types/tenantPreferences";
+import { Tables } from "@/lib/supabaseUtils";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -45,7 +46,7 @@ const Index = () => {
 
     try {
       const { data, error } = await supabase
-        .from("tenant_preferences")
+        .from(Tables.TENANT_PREFERENCES)
         .select("field_visibility")
         .eq("tenant_id", profile.tenant_id)
         .maybeSingle();
@@ -93,7 +94,7 @@ const Index = () => {
 
       // Fetch leads for user's tenant (all users now have a tenant_id)
       const { data: leadsData, error: leadsError } = await supabase
-        .from("leads")
+        .from(Tables.LEADS)
         .select("*")
         .eq("tenant_id", profile.tenant_id)
         .order("created_at", { ascending: false });
@@ -109,7 +110,7 @@ const Index = () => {
 
       if (uniqueCompanyNames.length > 0) {
         const { data: companiesData, error: companiesError } = await supabase
-          .from("companies")
+          .from(Tables.COMPANIES)
           .select("name, industry, location, annual_revenue, description")
           .in("name", uniqueCompanyNames);
 
@@ -127,7 +128,7 @@ const Index = () => {
 
       // Fetch comments for all leads (filtered by tenant_id)
       const { data: commentsData, error: commentsError } = await supabase
-        .from("comments")
+        .from(Tables.COMMENTS)
         .select("*")
         .eq("tenant_id", profile.tenant_id)
         .order("created_at", { ascending: true });
@@ -204,7 +205,7 @@ const Index = () => {
   const handleStatusChange = async (leadId: string, newStatus: LeadStatus) => {
     try {
       const { error } = await supabase
-        .from("leads")
+        .from(Tables.LEADS)
         .update({ status: newStatus as any, updated_at: new Date().toISOString() })
         .eq("id", leadId);
 
@@ -234,7 +235,7 @@ const Index = () => {
 
     try {
       const { data, error } = await supabase
-        .from("comments")
+        .from(Tables.COMMENTS)
         .insert({
           lead_id: leadId,
           text: commentText,
@@ -269,7 +270,7 @@ const Index = () => {
 
       // Update lead's updated_at timestamp
       await supabase
-        .from("leads")
+        .from(Tables.LEADS)
         .update({ updated_at: new Date().toISOString() })
         .eq("id", leadId);
 

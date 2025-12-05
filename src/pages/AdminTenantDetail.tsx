@@ -23,6 +23,7 @@ import { CsvUploadDialog } from "@/components/CsvUploadDialog";
 import { Lead, LeadStatus, LeadTier } from "@/types/lead";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FieldVisibilityConfig, defaultFieldVisibility, LeadFieldKey } from "@/types/tenantPreferences";
+import { Tables } from "@/lib/supabaseUtils";
 
 interface TenantDetail {
   tenant: {
@@ -97,7 +98,7 @@ const AdminTenantDetail = () => {
     try {
       // Fetch tenant directly from Supabase
       const { data: tenantData, error: tenantError } = await supabase
-        .from("tenants")
+        .from(Tables.TENANTS)
         .select("*")
         .eq("id", tenantId)
         .single();
@@ -112,14 +113,14 @@ const AdminTenantDetail = () => {
 
       // Fetch preferences
       const { data: prefsData } = await supabase
-        .from("tenant_preferences")
+        .from(Tables.TENANT_PREFERENCES)
         .select("*")
         .eq("tenant_id", tenantId)
         .single();
 
       // Fetch users
       const { data: usersData, error: usersError } = await supabase
-        .from("user_profiles")
+        .from(Tables.USER_PROFILES)
         .select("id, email, full_name, role, created_at")
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false });
@@ -224,7 +225,7 @@ const AdminTenantDetail = () => {
     try {
       // Fetch leads for this tenant
       const { data: leadsData, error: leadsError } = await supabase
-        .from("leads")
+        .from(Tables.LEADS)
         .select("*")
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false });
@@ -239,7 +240,7 @@ const AdminTenantDetail = () => {
       
       if (uniqueCompanyNames.length > 0) {
         const { data: companiesData, error: companiesError } = await supabase
-          .from("companies")
+          .from(Tables.COMPANIES)
           .select("name, industry, location, annual_revenue, description")
           .in("name", uniqueCompanyNames)
           .eq("tenant_id", tenantId);
@@ -258,7 +259,7 @@ const AdminTenantDetail = () => {
 
       // Fetch comments for this tenant's leads
       const { data: commentsData, error: commentsError } = await supabase
-        .from("comments")
+        .from(Tables.COMMENTS)
         .select("*")
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: true });
@@ -310,7 +311,7 @@ const AdminTenantDetail = () => {
   const handleStatusChange = async (leadId: string, newStatus: LeadStatus) => {
     try {
       const { error } = await supabase
-        .from("leads")
+        .from(Tables.LEADS)
         .update({ status: newStatus as any, updated_at: new Date().toISOString() })
         .eq("id", leadId);
 
@@ -340,7 +341,7 @@ const AdminTenantDetail = () => {
 
     try {
       const { data, error } = await supabase
-        .from("comments")
+        .from(Tables.COMMENTS)
         .insert({
           lead_id: leadId,
           text: commentText,
@@ -375,7 +376,7 @@ const AdminTenantDetail = () => {
 
       // Update lead's updated_at timestamp
       await supabase
-        .from("leads")
+        .from(Tables.LEADS)
         .update({ updated_at: new Date().toISOString() })
         .eq("id", leadId);
 
@@ -415,7 +416,7 @@ const AdminTenantDetail = () => {
 
       // Check if preferences already exist
       const { data: existing, error: checkError } = await supabase
-        .from("tenant_preferences")
+        .from(Tables.TENANT_PREFERENCES)
         .select("id")
         .eq("tenant_id", tenantId)
         .single();
@@ -429,7 +430,7 @@ const AdminTenantDetail = () => {
       if (existing) {
         // Update existing preferences
         const { data, error } = await supabase
-          .from("tenant_preferences")
+          .from(Tables.TENANT_PREFERENCES)
           .update(preferencesData)
           .eq("tenant_id", tenantId)
           .select()
@@ -440,7 +441,7 @@ const AdminTenantDetail = () => {
       } else {
         // Insert new preferences
         const { data, error } = await supabase
-          .from("tenant_preferences")
+          .from(Tables.TENANT_PREFERENCES)
           .insert(preferencesData)
           .select()
           .single();
@@ -477,7 +478,7 @@ const AdminTenantDetail = () => {
     setSavingNotes(true);
     try {
       const { error } = await supabase
-        .from("tenants")
+        .from(Tables.TENANTS)
         .update({
           admin_notes: adminNotes.trim() || null,
           updated_at: new Date().toISOString(),
@@ -523,7 +524,7 @@ const AdminTenantDetail = () => {
     try {
       // Check if preferences already exist
       const { data: existing, error: checkError } = await supabase
-        .from("tenant_preferences")
+        .from(Tables.TENANT_PREFERENCES)
         .select("id, field_visibility")
         .eq("tenant_id", tenantId)
         .maybeSingle();
@@ -539,14 +540,14 @@ const AdminTenantDetail = () => {
 
       if (existing) {
         const { error } = await supabase
-          .from("tenant_preferences")
+          .from(Tables.TENANT_PREFERENCES)
           .update(updateData)
           .eq("tenant_id", tenantId);
 
         if (error) throw error;
       } else {
         const { error } = await supabase
-          .from("tenant_preferences")
+          .from(Tables.TENANT_PREFERENCES)
           .insert({
             tenant_id: tenantId,
             ...updateData,

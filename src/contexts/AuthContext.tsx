@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useState, useRef } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import type { Tables } from "@/integrations/supabase/types";
+import type { Tables as DatabaseTables } from "@/integrations/supabase/types";
+import { Tables } from "@/lib/supabaseUtils";
 
-type UserProfile = Tables<"user_profiles">;
+type UserProfile = DatabaseTables<"user_profiles">;
 
 interface AuthContextType {
   user: User | null;
@@ -56,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
 
       const fetchPromise = supabase
-        .from("user_profiles")
+        .from(Tables.USER_PROFILES)
         .select("*")
         .eq("id", userId)
         .single();

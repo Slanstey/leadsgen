@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { CsvUploadDialog } from "@/components/CsvUploadDialog";
+import { Tables } from "@/lib/supabaseUtils";
 import {
   Table,
   TableBody,
@@ -102,7 +103,7 @@ const AdminDashboard = () => {
       // Fetch tenants directly from Supabase (RLS policy allows admins to read all)
       // Exclude the default tenant from the dashboard
       const { data: tenantsData, error: tenantsError } = await supabase
-        .from("tenants")
+        .from(Tables.TENANTS)
         .select("*")
         .neq("id", DEFAULT_TENANT_ID)
         .order("created_at", { ascending: false });
@@ -122,7 +123,7 @@ const AdminDashboard = () => {
         tenantsData.map(async (tenant) => {
           // Count users
           const { data: usersData, error: usersError } = await supabase
-            .from("user_profiles")
+            .from(Tables.USER_PROFILES)
             .select("id")
             .eq("tenant_id", tenant.id);
 
@@ -130,7 +131,7 @@ const AdminDashboard = () => {
 
           // Count leads
           const { data: leadsData, error: leadsError } = await supabase
-            .from("leads")
+            .from(Tables.LEADS)
             .select("id")
             .eq("tenant_id", tenant.id);
 
@@ -138,7 +139,7 @@ const AdminDashboard = () => {
 
           // Get lead generation methods (array) - use maybeSingle to avoid error if none exist
           const { data: prefsData, error: prefsError } = await supabase
-            .from("tenant_preferences")
+            .from(Tables.TENANT_PREFERENCES)
             .select("lead_generation_method")
             .eq("tenant_id", tenant.id)
             .maybeSingle();
@@ -200,7 +201,7 @@ const AdminDashboard = () => {
     try {
       // Check if preferences exist (use maybeSingle to avoid error if none exist)
       const { data: existingPrefs, error: checkError } = await supabase
-        .from("tenant_preferences")
+        .from(Tables.TENANT_PREFERENCES)
         .select("id")
         .eq("tenant_id", tenantId)
         .maybeSingle();
@@ -213,7 +214,7 @@ const AdminDashboard = () => {
       if (existingPrefs) {
         // Update existing preferences
         const { error } = await supabase
-          .from("tenant_preferences")
+          .from(Tables.TENANT_PREFERENCES)
           .update({ 
             lead_generation_method: newMethods,
             updated_at: new Date().toISOString()
@@ -224,7 +225,7 @@ const AdminDashboard = () => {
       } else {
         // Create new preferences
         const { error } = await supabase
-          .from("tenant_preferences")
+          .from(Tables.TENANT_PREFERENCES)
           .insert({
             tenant_id: tenantId,
             lead_generation_method: newMethods,
@@ -463,7 +464,7 @@ const AdminDashboard = () => {
       }
 
       const { data, error } = await supabase
-        .from("tenants")
+        .from(Tables.TENANTS)
         .insert(tenantData)
         .select()
         .single();

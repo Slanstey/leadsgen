@@ -14,6 +14,7 @@ import { Sparkles, Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { Tables } from "@/lib/supabaseUtils";
 
 interface EmailDialogProps {
   open: boolean;
@@ -47,7 +48,7 @@ export function EmailDialog({
       let company = null;
       if (profile?.tenant_id) {
         const { data: companyData, error: companyError } = await supabase
-          .from("companies")
+          .from(Tables.COMPANIES)
           .select("*")
           .eq("name", companyName)
           .eq("tenant_id", profile.tenant_id)
