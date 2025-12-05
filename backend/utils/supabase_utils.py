@@ -4,6 +4,10 @@ Provides environment-aware table name resolution
 """
 import os
 from typing import Final
+from dotenv import load_dotenv
+
+# Load environment variables to ensure they're available
+load_dotenv()
 
 
 def get_table_name(table_name: str) -> str:

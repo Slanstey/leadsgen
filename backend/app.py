@@ -15,12 +15,16 @@ from supabase.lib.client_options import ClientOptions
 from postgrest.exceptions import APIError as PostgrestAPIError
 import logging
 
+# Load environment variables FIRST, before any imports that depend on them
+load_dotenv()
+
 from services.linkedin_search import LinkedInSearchService
 from services.google_places_service import GooglePlacesService
 from services.llm_service import LLMService
 from services.google_custom_search_service import GoogleCustomSearchService
 from services.database_service import DatabaseService
 from services.workflow_orchestrator import WorkflowOrchestrator
+from utils.supabase_utils import Tables
 
 # Set up logging
 logging.basicConfig(
@@ -29,8 +33,6 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
-
-load_dotenv()
 
 app = FastAPI()
 
@@ -974,12 +976,13 @@ async def search_linkedin(
                 "role": profile["role"],
                 "contact_email": "",
                 "status": "not_contacted",
+                "is_connected_to_tenant": False,  # Always set to False for LinkedIn search results
             })
         
         # Insert leads into Supabase
         if leads_to_insert:
             try:
-                result = supabase.table("leads").insert(leads_to_insert).execute()
+                result = supabase.table(Tables.LEADS).insert(leads_to_insert).execute()
                 leads_created = len(result.data) if result.data else 0
             except PostgrestAPIError as e:
                 error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
@@ -1371,7 +1374,7 @@ async def classify_lead(request: Request):
             raise HTTPException(status_code=400, detail="lead_id and tenant_id are required")
         
         # Fetch lead data
-        lead_result = supabase.table("leads").select("*").eq("id", lead_id).eq("tenant_id", tenant_id).single().execute()
+        lead_result = supabase.table(Tables.LEADS).select("*").eq("id", lead_id).eq("tenant_id", tenant_id).single().execute()
         
         if not lead_result.data:
             raise HTTPException(status_code=404, detail="Lead not found")
@@ -1381,7 +1384,7 @@ async def classify_lead(request: Request):
         # Fetch company data
         company_data = None
         if lead_data.get("company_name"):
-            company_result = supabase.table("companies").select("*").eq(
+            company_result = supabase.table(Tables.COMPANIES).select("*").eq(
                 "tenant_id", tenant_id
             ).eq("name", lead_data["company_name"]).limit(1).execute()
             
@@ -1400,7 +1403,7 @@ async def classify_lead(request: Request):
         )
         
         # Update lead with classification
-        update_result = supabase.table("leads").update({
+        update_result = supabase.table(Tables.LEADS).update({
             "tier": classification["tier"],
             "tier_reason": classification["tier_reason"],
             "warm_connections": classification["warm_connections"],

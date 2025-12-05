@@ -387,8 +387,8 @@ export function CsvUploadDialog({
         throw new Error(`Classification failed: ${response.statusText}`);
       }
 
-      const result = await response.json();
-      console.log(`[CSV Upload] Lead ${leadId} classified as ${result.classification.tier}`);
+      // Classification successful - only log errors to reduce console noise
+      // Individual classification results are not logged to avoid spam
     } catch (error) {
       console.error(`[CSV Upload] Error classifying lead ${leadId}:`, error);
       // Don't throw - classification failure shouldn't block the upload
@@ -629,7 +629,7 @@ export function CsvUploadDialog({
             tier,
             ...(tierReason && { tier_reason: tierReason }),
             ...(warmConnections && { warm_connections: warmConnections }),
-            ...(isConnectedToTenant && { is_connected_to_tenant: isConnectedToTenant }),
+            is_connected_to_tenant: isConnectedToTenant, // Always include, defaults to false
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },
