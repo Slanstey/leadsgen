@@ -1432,8 +1432,8 @@ async def classify_leads_batch(request: Request):
         if not lead_ids or not tenant_id:
             raise HTTPException(status_code=400, detail="lead_ids and tenant_id are required")
         
-        if len(lead_ids) > 100:
-            raise HTTPException(status_code=400, detail="Maximum 100 leads per batch")
+        if len(lead_ids) > 25:
+            raise HTTPException(status_code=400, detail="Maximum 25 leads per batch")
         
         # Fetch all leads
         lead_results = supabase.table(Tables.LEADS).select("*").eq("tenant_id", tenant_id).in_("id", lead_ids).execute()

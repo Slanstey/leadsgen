@@ -1086,32 +1086,42 @@ export function CsvUploadDialog({
 
       leadsSkipped += existingLeadsSet.size;
 
-      // Batch classify all newly created leads (if any)
+      // Batch classify all newly created leads asynchronously (don't block upload completion)
+      // This runs in the background and doesn't prevent the upload from completing
       if (newlyCreatedLeadIds.length > 0 && classificationAbortControllerRef.current) {
-        try {
-          // Process in batches of 50 to avoid overwhelming the API
-          const BATCH_SIZE = 50;
-          for (let i = 0; i < newlyCreatedLeadIds.length; i += BATCH_SIZE) {
-            const batch = newlyCreatedLeadIds.slice(i, i + BATCH_SIZE);
+        // Run classification in background without blocking
+        (async () => {
+          try {
+            // Process in smaller batches of 20 to avoid timeouts
+            const BATCH_SIZE = 20;
+            for (let i = 0; i < newlyCreatedLeadIds.length; i += BATCH_SIZE) {
+              const batch = newlyCreatedLeadIds.slice(i, i + BATCH_SIZE);
 
-            // Check if classification was cancelled
-            if (classificationAbortControllerRef.current?.signal.aborted) {
-              console.log("[CSV Upload] Classification cancelled by user");
-              break;
+              // Check if classification was cancelled
+              if (classificationAbortControllerRef.current?.signal.aborted) {
+                console.log("[CSV Upload] Classification cancelled by user");
+                break;
+              }
+
+              // Add small delay between batches to avoid rate limiting
+              if (i > 0) {
+                await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+              }
+
+              await classifyLeadsBatch(
+                batch,
+                tenantId,
+                classificationAbortControllerRef.current?.signal
+              );
             }
-
-            await classifyLeadsBatch(
-              batch,
-              tenantId,
-              classificationAbortControllerRef.current?.signal
-            );
+            console.log(`[CSV Upload] Completed classification for ${newlyCreatedLeadIds.length} leads`);
+          } catch (error: any) {
+            // Don't fail the upload if classification fails
+            if (error.name !== 'AbortError') {
+              console.error("[CSV Upload] Error during batch classification:", error);
+            }
           }
-        } catch (error: any) {
-          // Don't fail the upload if classification fails
-          if (error.name !== 'AbortError') {
-            console.error("[CSV Upload] Error during batch classification:", error);
-          }
-        }
+        })(); // Immediately invoked async function - runs in background
       }
 
       // Build success message

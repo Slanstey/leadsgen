@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,15 @@ import { Lead, LeadStatus, LeadTier } from "@/types/lead";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FieldVisibilityConfig, defaultFieldVisibility, LeadFieldKey } from "@/types/tenantPreferences";
 import { Tables } from "@/lib/supabaseUtils";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 interface TenantDetail {
   tenant: {
@@ -59,6 +68,11 @@ const AdminTenantDetail = () => {
   const [csvUploadOpen, setCsvUploadOpen] = useState(false);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50); // Default 50 leads per page
+  const [totalLeads, setTotalLeads] = useState(0);
   const [formData, setFormData] = useState({
     targetIndustry: "",
     companySize: "",
@@ -75,6 +89,165 @@ const AdminTenantDetail = () => {
   });
   const [adminNotes, setAdminNotes] = useState("");
   const [fieldVisibility, setFieldVisibility] = useState<FieldVisibilityConfig>(defaultFieldVisibility);
+
+  // Fetch total count for pagination - MUST be before any early returns
+  const fetchTotalCount = useCallback(async () => {
+    if (!tenantId) return 0;
+
+    try {
+      const { count, error } = await supabase
+        .from(Tables.LEADS)
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId);
+
+      if (error) {
+        console.error("Total count fetch error:", error);
+        return 0;
+      }
+
+      return count || 0;
+    } catch (error) {
+      console.error("Error fetching total count:", error);
+      return 0;
+    }
+  }, [tenantId]);
+
+  const fetchLeads = useCallback(async () => {
+    if (!session || !tenantId) {
+      toast.error("You must be logged in");
+      return;
+    }
+
+    setLoadingLeads(true);
+    try {
+      // Fetch total count first
+      const total = await fetchTotalCount();
+      setTotalLeads(total);
+
+      // Calculate pagination
+      const from = (currentPage - 1) * pageSize;
+      const to = from + pageSize - 1;
+
+      // Fetch leads for this tenant with pagination
+      const { data: leadsData, error: leadsError, count } = await supabase
+        .from(Tables.LEADS)
+        .select("*", { count: "exact" })
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false })
+        .range(from, to);
+
+      if (leadsError) {
+        throw new Error(`Failed to fetch leads: ${leadsError.message}`);
+      }
+
+      // Fetch companies for unique company names in current page
+      const uniqueCompanyNames = [...new Set((leadsData || []).map((lead: any) => lead.company_name))];
+      const companiesMap = new Map<string, { industry?: string; location?: string; annualRevenue?: string; description?: string }>();
+
+      if (uniqueCompanyNames.length > 0) {
+        const { data: companiesData, error: companiesError } = await supabase
+          .from(Tables.COMPANIES)
+          .select("name, industry, location, annual_revenue, description")
+          .in("name", uniqueCompanyNames)
+          .eq("tenant_id", tenantId);
+
+        if (!companiesError && companiesData) {
+          companiesData.forEach((company: any) => {
+            companiesMap.set(company.name, {
+              industry: company.industry,
+              location: company.location,
+              annualRevenue: company.annual_revenue,
+              description: company.description,
+            });
+          });
+        }
+      }
+
+      // Fetch comments only for leads on current page (more efficient)
+      const leadIds = (leadsData || []).map((lead: any) => lead.id);
+      let commentsData: any[] = [];
+
+      if (leadIds.length > 0) {
+        const { data: comments, error: commentsError } = await supabase
+          .from(Tables.COMMENTS)
+          .select("*")
+          .eq("tenant_id", tenantId)
+          .in("lead_id", leadIds)
+          .order("created_at", { ascending: true });
+
+        if (commentsError) {
+          console.error("Comments fetch error:", commentsError);
+          // Don't throw, just log - leads can still be displayed without comments
+        } else {
+          commentsData = comments || [];
+        }
+      }
+
+      // Combine leads with their comments and company data
+      const leadsWithComments: Lead[] = (leadsData || []).map((lead: any) => {
+        const leadComments = commentsData
+          .filter((comment) => comment.lead_id === lead.id)
+          .map((comment) => ({
+            id: comment.id,
+            text: comment.text,
+            author: comment.author,
+            createdAt: new Date(comment.created_at || ""),
+          }));
+
+        return {
+          id: lead.id,
+          companyName: lead.company_name,
+          contactPerson: lead.contact_person,
+          contactEmail: lead.contact_email,
+          role: lead.role,
+          status: lead.status as LeadStatus,
+          tier: (lead.tier as LeadTier) || "medium",
+          tierReason: lead.tier_reason,
+          warmConnections: lead.warm_connections,
+          isConnectedToTenant: lead.is_connected_to_tenant,
+          comments: leadComments,
+          createdAt: new Date(lead.created_at || ""),
+          updatedAt: new Date(lead.updated_at || ""),
+          company: companiesMap.get(lead.company_name) || undefined,
+        };
+      });
+
+      setLeads(leadsWithComments);
+      setShowLeads(true);
+    } catch (error: any) {
+      console.error("Error loading leads:", error);
+      toast.error(error.message || "Failed to load leads");
+    } finally {
+      setLoadingLeads(false);
+    }
+  }, [session, tenantId, currentPage, pageSize, fetchTotalCount]);
+
+  // Refetch leads when page or pageSize changes (if leads are already shown)
+  useEffect(() => {
+    if (showLeads && tenantId) {
+      fetchLeads();
+    }
+  }, [currentPage, pageSize, showLeads, tenantId, fetchLeads]);
+
+  // Calculate pagination info
+  const totalPages = Math.ceil(totalLeads / pageSize);
+  const startIndex = (currentPage - 1) * pageSize + 1;
+  const endIndex = Math.min(currentPage * pageSize, totalLeads);
+
+  // Handle page changes
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+      // Scroll to top when page changes
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  // Reset to page 1 when viewing leads for the first time
+  const handleViewLeads = () => {
+    setCurrentPage(1);
+    fetchLeads();
+  };
 
   useEffect(() => {
     // Check if user is admin
@@ -215,99 +388,6 @@ const AdminTenantDetail = () => {
     });
   };
 
-  const fetchLeads = async () => {
-    if (!session || !tenantId) {
-      toast.error("You must be logged in");
-      return;
-    }
-
-    setLoadingLeads(true);
-    try {
-      // Fetch leads for this tenant
-      const { data: leadsData, error: leadsError } = await supabase
-        .from(Tables.LEADS)
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .order("created_at", { ascending: false });
-
-      if (leadsError) {
-        throw new Error(`Failed to fetch leads: ${leadsError.message}`);
-      }
-
-      // Fetch companies for all unique company names
-      const uniqueCompanyNames = [...new Set((leadsData || []).map((lead: any) => lead.company_name))];
-      const companiesMap = new Map<string, { industry?: string; location?: string; annualRevenue?: string; description?: string }>();
-      
-      if (uniqueCompanyNames.length > 0) {
-        const { data: companiesData, error: companiesError } = await supabase
-          .from(Tables.COMPANIES)
-          .select("name, industry, location, annual_revenue, description")
-          .in("name", uniqueCompanyNames)
-          .eq("tenant_id", tenantId);
-
-        if (!companiesError && companiesData) {
-          companiesData.forEach((company: any) => {
-            companiesMap.set(company.name, {
-              industry: company.industry,
-              location: company.location,
-              annualRevenue: company.annual_revenue,
-              description: company.description,
-            });
-          });
-        }
-      }
-
-      // Fetch comments for this tenant's leads
-      const { data: commentsData, error: commentsError } = await supabase
-        .from(Tables.COMMENTS)
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .order("created_at", { ascending: true });
-
-      if (commentsError) {
-        console.error("Comments fetch error:", commentsError);
-        // Don't throw, just log - leads can still be displayed without comments
-      }
-
-      // Combine leads with their comments and company data
-      const leadsWithComments: Lead[] = (leadsData || []).map((lead: any) => {
-        const leadComments = (commentsData || [])
-          .filter((comment) => comment.lead_id === lead.id)
-          .map((comment) => ({
-            id: comment.id,
-            text: comment.text,
-            author: comment.author,
-            createdAt: new Date(comment.created_at || ""),
-          }));
-
-        return {
-          id: lead.id,
-          companyName: lead.company_name,
-          contactPerson: lead.contact_person,
-          contactEmail: lead.contact_email,
-          role: lead.role,
-          status: lead.status as LeadStatus,
-          tier: (lead.tier as LeadTier) || "medium",
-          tierReason: lead.tier_reason,
-          warmConnections: lead.warm_connections,
-          isConnectedToTenant: lead.is_connected_to_tenant,
-          comments: leadComments,
-          createdAt: new Date(lead.created_at || ""),
-          updatedAt: new Date(lead.updated_at || ""),
-          company: companiesMap.get(lead.company_name) || undefined,
-        };
-      });
-
-      setLeads(leadsWithComments);
-      setShowLeads(true);
-    } catch (error: any) {
-      console.error("Error loading leads:", error);
-      toast.error(error.message || "Failed to load leads");
-    } finally {
-      setLoadingLeads(false);
-    }
-  };
-
   const handleStatusChange = async (leadId: string, newStatus: LeadStatus) => {
     try {
       const { error } = await supabase
@@ -358,18 +438,18 @@ const AdminTenantDetail = () => {
         prevLeads.map((lead) =>
           lead.id === leadId
             ? {
-                ...lead,
-                comments: [
-                  ...lead.comments,
-                  {
-                    id: data.id,
-                    text: data.text,
-                    createdAt: new Date(data.created_at || ""),
-                    author: data.author,
-                  },
-                ],
-                updatedAt: new Date(),
-              }
+              ...lead,
+              comments: [
+                ...lead.comments,
+                {
+                  id: data.id,
+                  text: data.text,
+                  createdAt: new Date(data.created_at || ""),
+                  author: data.author,
+                },
+              ],
+              updatedAt: new Date(),
+            }
             : lead
         )
       );
@@ -435,7 +515,7 @@ const AdminTenantDetail = () => {
           .eq("tenant_id", tenantId)
           .select()
           .single();
-        
+
         if (error) throw error;
         result = data;
       } else {
@@ -445,7 +525,7 @@ const AdminTenantDetail = () => {
           .insert(preferencesData)
           .select()
           .single();
-        
+
         if (error) throw error;
         result = data;
       }
@@ -560,12 +640,12 @@ const AdminTenantDetail = () => {
       setTenantDetail((prev) =>
         prev
           ? {
-              ...prev,
-              preferences: {
-                ...(prev.preferences || {}),
-                field_visibility: newVisibility,
-              },
-            }
+            ...prev,
+            preferences: {
+              ...(prev.preferences || {}),
+              field_visibility: newVisibility,
+            },
+          }
           : prev
       );
     } catch (error: any) {
@@ -823,9 +903,9 @@ const AdminTenantDetail = () => {
                     placeholder="0"
                     value={formData.experienceYears}
                     onChange={(e) =>
-                      setFormData({ 
-                        ...formData, 
-                        experienceYears: parseInt(e.target.value) || 0 
+                      setFormData({
+                        ...formData,
+                        experienceYears: parseInt(e.target.value) || 0
                       })
                     }
                   />
@@ -1076,8 +1156,28 @@ const AdminTenantDetail = () => {
                       Export
                     </Button>
                   )}
+                  {showLeads && (
+                    <Select
+                      value={pageSize.toString()}
+                      onValueChange={(value) => {
+                        setPageSize(Number(value));
+                        setCurrentPage(1); // Reset to first page when changing page size
+                        // fetchLeads will be called automatically by useEffect
+                      }}
+                    >
+                      <SelectTrigger className="w-[140px] h-10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="25">25 per page</SelectItem>
+                        <SelectItem value="50">50 per page</SelectItem>
+                        <SelectItem value="100">100 per page</SelectItem>
+                        <SelectItem value="200">200 per page</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                   <Button
-                    onClick={fetchLeads}
+                    onClick={showLeads ? fetchLeads : handleViewLeads}
                     disabled={loadingLeads}
                     variant={showLeads ? "outline" : "default"}
                   >
@@ -1110,12 +1210,124 @@ const AdminTenantDetail = () => {
                   No leads found for this tenant
                 </p>
               ) : (
-                <LeadsTable
-                  leads={leads}
-                  onStatusChange={handleStatusChange}
-                  onAddComment={handleAddComment}
-                  fieldVisibility={fieldVisibility}
-                />
+                <>
+                  <LeadsTable
+                    leads={leads}
+                    onStatusChange={handleStatusChange}
+                    onAddComment={handleAddComment}
+                    fieldVisibility={fieldVisibility}
+                  />
+
+                  {/* Pagination Controls */}
+                  {totalPages > 1 && (
+                    <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div className="text-sm text-muted-foreground">
+                        Showing {startIndex} to {endIndex} of {totalLeads} leads
+                      </div>
+                      <Pagination>
+                        <PaginationContent>
+                          <PaginationItem>
+                            <PaginationPrevious
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handlePageChange(currentPage - 1);
+                              }}
+                              className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                              href="#"
+                            />
+                          </PaginationItem>
+
+                          {/* First page */}
+                          {currentPage > 3 && (
+                            <>
+                              <PaginationItem>
+                                <PaginationLink
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handlePageChange(1);
+                                  }}
+                                  className="cursor-pointer"
+                                  href="#"
+                                >
+                                  1
+                                </PaginationLink>
+                              </PaginationItem>
+                              {currentPage > 4 && (
+                                <PaginationItem>
+                                  <PaginationEllipsis />
+                                </PaginationItem>
+                              )}
+                            </>
+                          )}
+
+                          {/* Page numbers around current page */}
+                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            let pageNum: number;
+                            if (totalPages <= 5) {
+                              pageNum = i + 1;
+                            } else if (currentPage <= 3) {
+                              pageNum = i + 1;
+                            } else if (currentPage >= totalPages - 2) {
+                              pageNum = totalPages - 4 + i;
+                            } else {
+                              pageNum = currentPage - 2 + i;
+                            }
+
+                            return (
+                              <PaginationItem key={pageNum}>
+                                <PaginationLink
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handlePageChange(pageNum);
+                                  }}
+                                  isActive={currentPage === pageNum}
+                                  className="cursor-pointer"
+                                  href="#"
+                                >
+                                  {pageNum}
+                                </PaginationLink>
+                              </PaginationItem>
+                            );
+                          })}
+
+                          {/* Last page */}
+                          {currentPage < totalPages - 2 && (
+                            <>
+                              {currentPage < totalPages - 3 && (
+                                <PaginationItem>
+                                  <PaginationEllipsis />
+                                </PaginationItem>
+                              )}
+                              <PaginationItem>
+                                <PaginationLink
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handlePageChange(totalPages);
+                                  }}
+                                  className="cursor-pointer"
+                                  href="#"
+                                >
+                                  {totalPages}
+                                </PaginationLink>
+                              </PaginationItem>
+                            </>
+                          )}
+
+                          <PaginationItem>
+                            <PaginationNext
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handlePageChange(currentPage + 1);
+                              }}
+                              className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                              href="#"
+                            />
+                          </PaginationItem>
+                        </PaginationContent>
+                      </Pagination>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

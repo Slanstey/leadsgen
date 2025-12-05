@@ -5,8 +5,10 @@ Uses AI/LLM to generate leads based on preferences
 import os
 import json
 import requests
+from requests.exceptions import ReadTimeout
 from typing import List, Dict, Any, Optional
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -595,27 +597,30 @@ Return a JSON object with:
                 ""
             ]
             
-            # Add each lead's information
+            # Add each lead's information (optimized format to reduce tokens)
             for idx, lead_info in enumerate(leads_data, 1):
                 lead_data = lead_info.get("lead_data", {})
                 company_data = lead_info.get("company_data")
                 lead_id = lead_info.get("lead_id", f"lead_{idx}")
                 
-                prompt_parts.append(f"--- Lead {idx} (ID: {lead_id}) ---")
-                prompt_parts.append(f"Contact Person: {lead_data.get('contact_person', 'Unknown')}")
-                prompt_parts.append(f"Email: {lead_data.get('contact_email', 'Not provided')}")
-                prompt_parts.append(f"Role: {lead_data.get('role', 'Unknown')}")
+                # Use compact format to reduce token usage
+                prompt_parts.append(f"Lead {idx} (ID:{lead_id}):")
+                prompt_parts.append(f"  Person: {lead_data.get('contact_person', 'Unknown')}")
+                prompt_parts.append(f"  Email: {lead_data.get('contact_email', 'N/A')}")
+                prompt_parts.append(f"  Role: {lead_data.get('role', 'Unknown')}")
                 
                 if company_data:
-                    prompt_parts.append(f"Company Name: {company_data.get('name', 'Unknown')}")
-                    prompt_parts.append(f"Industry: {company_data.get('industry', 'Not specified')}")
-                    prompt_parts.append(f"Location: {company_data.get('location', 'Not specified')}")
-                    if company_data.get('description'):
-                        prompt_parts.append(f"Description: {company_data.get('description', '')[:200]}")  # Truncate long descriptions
+                    prompt_parts.append(f"  Company: {company_data.get('name', 'Unknown')}")
+                    prompt_parts.append(f"  Industry: {company_data.get('industry', 'N/A')}")
+                    prompt_parts.append(f"  Location: {company_data.get('location', 'N/A')}")
+                    # Only include description if it's short and relevant
+                    desc = company_data.get('description', '')
+                    if desc and len(desc) <= 150:
+                        prompt_parts.append(f"  About: {desc[:150]}")
                     if company_data.get('annual_revenue'):
-                        prompt_parts.append(f"Annual Revenue: {company_data.get('annual_revenue', '')}")
+                        prompt_parts.append(f"  Revenue: {company_data.get('annual_revenue', '')}")
                 else:
-                    prompt_parts.append(f"Company Name: {lead_data.get('company_name', 'Unknown')}")
+                    prompt_parts.append(f"  Company: {lead_data.get('company_name', 'Unknown')}")
                 
                 prompt_parts.append("")
             
@@ -628,8 +633,9 @@ Return a JSON object with:
                 "Content-Type": "application/json"
             }
             
-            # Use more tokens for batch processing
-            max_tokens = min(4000, 500 + (len(leads_data) * 200))  # Scale tokens with batch size
+            # Use more tokens for batch processing - increased significantly
+            # Allow up to 8000 tokens for larger batches (OpenAI models support up to 16k+)
+            max_tokens = min(8000, 1000 + (len(leads_data) * 300))  # Scale tokens with batch size, more generous
             
             payload = {
                 "model": self.system_prompt_model,
@@ -647,12 +653,52 @@ Return a JSON object with:
                 "max_tokens": max_tokens
             }
             
-            response = requests.post(
-                self.completions_url,
-                json=payload,
-                headers=headers,
-                timeout=60  # Longer timeout for batch processing
-            )
+            # Increased timeout to 120 seconds for batch processing
+            # Add retry logic for timeout errors
+            max_retries = 2
+            response = None
+            for attempt in range(max_retries + 1):
+                try:
+                    response = requests.post(
+                        self.completions_url,
+                        json=payload,
+                        headers=headers,
+                        timeout=120  # Increased timeout for batch processing
+                    )
+                    break  # Success, exit retry loop
+                except ReadTimeout as e:
+                    if attempt < max_retries:
+                        wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s
+                        logger.warning(f"Batch classification timeout (attempt {attempt + 1}/{max_retries + 1}), retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logger.error(f"Batch classification timed out after {max_retries + 1} attempts")
+                        # Return default classifications instead of raising
+                        return [
+                            {
+                                "lead_id": lead.get("lead_id", ""),
+                                "tier": "medium",
+                                "tier_reason": "Classification timed out - too many leads in batch",
+                                "warm_connections": ""
+                            }
+                            for lead in leads_data
+                        ]
+                except Exception as e:
+                    logger.error(f"Unexpected error during batch classification: {e}")
+                    raise
+            
+            if response is None:
+                # Should not happen, but handle it
+                return [
+                    {
+                        "lead_id": lead.get("lead_id", ""),
+                        "tier": "medium",
+                        "tier_reason": "Classification failed - no response",
+                        "warm_connections": ""
+                    }
+                    for lead in leads_data
+                ]
             
             if response.status_code != 200:
                 logger.error(f"OpenAI API error classifying leads batch: {response.status_code} - {response.text}")
