@@ -1421,6 +1421,79 @@ async def classify_lead(request: Request):
         logger.error(f"Error classifying lead: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error classifying lead: {str(e)}")
 
+@app.post("/api/classify-leads-batch")
+async def classify_leads_batch(request: Request):
+    """Classify multiple leads in a single LLM call for efficiency"""
+    try:
+        data = await request.json()
+        lead_ids = data.get("lead_ids", [])
+        tenant_id = data.get("tenant_id")
+        
+        if not lead_ids or not tenant_id:
+            raise HTTPException(status_code=400, detail="lead_ids and tenant_id are required")
+        
+        if len(lead_ids) > 100:
+            raise HTTPException(status_code=400, detail="Maximum 100 leads per batch")
+        
+        # Fetch all leads
+        lead_results = supabase.table(Tables.LEADS).select("*").eq("tenant_id", tenant_id).in_("id", lead_ids).execute()
+        
+        if not lead_results.data:
+            raise HTTPException(status_code=404, detail="No leads found")
+        
+        leads_data = lead_results.data
+        
+        # Fetch company data for all leads
+        company_names = list(set([lead.get("company_name") for lead in leads_data if lead.get("company_name")]))
+        companies_map = {}
+        
+        if company_names:
+            company_results = supabase.table(Tables.COMPANIES).select("*").eq(
+                "tenant_id", tenant_id
+            ).in_("name", company_names).execute()
+            
+            if company_results.data:
+                companies_map = {company["name"]: company for company in company_results.data}
+        
+        # Prepare data for batch classification
+        batch_data = []
+        for lead in leads_data:
+            company_data = companies_map.get(lead.get("company_name")) if lead.get("company_name") else None
+            batch_data.append({
+                "lead_id": lead["id"],
+                "lead_data": {
+                    "contact_person": lead.get("contact_person", ""),
+                    "contact_email": lead.get("contact_email", ""),
+                    "role": lead.get("role", ""),
+                    "company_name": lead.get("company_name", ""),
+                },
+                "company_data": company_data
+            })
+        
+        # Classify all leads in one LLM call
+        classifications = llm_service.classify_leads_batch(batch_data)
+        
+        # Update all leads with classifications
+        for classification in classifications:
+            lead_id = classification["lead_id"]
+            supabase.table(Tables.LEADS).update({
+                "tier": classification["tier"],
+                "tier_reason": classification["tier_reason"],
+                "warm_connections": classification["warm_connections"],
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("id", lead_id).execute()
+        
+        return {
+            "success": True,
+            "classifications_count": len(classifications)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error classifying leads batch: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to classify leads: {str(e)}")
+
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint"""

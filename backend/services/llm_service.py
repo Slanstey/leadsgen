@@ -541,4 +541,198 @@ Return a JSON object with:
         parts.append("\nPlease classify this lead and provide reasoning.")
         
         return "\n".join(parts)
+    
+    def classify_leads_batch(
+        self,
+        leads_data: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Classify multiple leads in a single LLM call for efficiency
+        
+        Args:
+            leads_data: List of dictionaries, each containing:
+                - lead_data: Dictionary with lead information
+                - company_data: Optional dictionary with company information
+                - lead_id: ID of the lead for mapping results
+        
+        Returns:
+            List of classification dictionaries with 'lead_id', 'tier', 'tier_reason', 'warm_connections'
+        """
+        if not self.api_key:
+            logger.warning("OpenAI API key not configured. Skipping batch lead classification.")
+            return [
+                {
+                    "lead_id": lead.get("lead_id", ""),
+                    "tier": "medium",
+                    "tier_reason": "Classification unavailable - API key not configured",
+                    "warm_connections": ""
+                }
+                for lead in leads_data
+            ]
+        
+        if not leads_data:
+            return []
+        
+        try:
+            # Build batch prompt with all leads
+            prompt_parts = [
+                "You are a lead qualification assistant. Analyze the following leads and classify each one as \"good\", \"medium\", or \"bad\" based on their potential value.",
+                "",
+                "Consider factors like:",
+                "- Quality of contact information",
+                "- Relevance of role and company",
+                "- Company size and industry fit",
+                "- Geographic location",
+                "- Potential for warm connections (LinkedIn connections, mutual contacts, etc.)",
+                "",
+                "For each lead, return a JSON object with:",
+                "- \"lead_id\": the ID of the lead",
+                "- \"tier\": one of \"good\", \"medium\", or \"bad\"",
+                "- \"tier_reason\": a brief explanation (1-2 sentences) of why this tier was assigned",
+                "- \"warm_connections\": a comma-separated list of potential warm connection opportunities. If none, return empty string.",
+                "",
+                "Leads to classify:",
+                ""
+            ]
+            
+            # Add each lead's information
+            for idx, lead_info in enumerate(leads_data, 1):
+                lead_data = lead_info.get("lead_data", {})
+                company_data = lead_info.get("company_data")
+                lead_id = lead_info.get("lead_id", f"lead_{idx}")
+                
+                prompt_parts.append(f"--- Lead {idx} (ID: {lead_id}) ---")
+                prompt_parts.append(f"Contact Person: {lead_data.get('contact_person', 'Unknown')}")
+                prompt_parts.append(f"Email: {lead_data.get('contact_email', 'Not provided')}")
+                prompt_parts.append(f"Role: {lead_data.get('role', 'Unknown')}")
+                
+                if company_data:
+                    prompt_parts.append(f"Company Name: {company_data.get('name', 'Unknown')}")
+                    prompt_parts.append(f"Industry: {company_data.get('industry', 'Not specified')}")
+                    prompt_parts.append(f"Location: {company_data.get('location', 'Not specified')}")
+                    if company_data.get('description'):
+                        prompt_parts.append(f"Description: {company_data.get('description', '')[:200]}")  # Truncate long descriptions
+                    if company_data.get('annual_revenue'):
+                        prompt_parts.append(f"Annual Revenue: {company_data.get('annual_revenue', '')}")
+                else:
+                    prompt_parts.append(f"Company Name: {lead_data.get('company_name', 'Unknown')}")
+                
+                prompt_parts.append("")
+            
+            prompt_parts.append("Return a JSON array of classification objects, one for each lead, in the same order as provided.")
+            
+            prompt = "\n".join(prompt_parts)
+            
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            # Use more tokens for batch processing
+            max_tokens = min(4000, 500 + (len(leads_data) * 200))  # Scale tokens with batch size
+            
+            payload = {
+                "model": self.system_prompt_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a lead qualification assistant. Return a JSON object with a 'classifications' key containing an array of classification results."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "response_format": {"type": "json_object"},
+                "max_tokens": max_tokens
+            }
+            
+            response = requests.post(
+                self.completions_url,
+                json=payload,
+                headers=headers,
+                timeout=60  # Longer timeout for batch processing
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"OpenAI API error classifying leads batch: {response.status_code} - {response.text}")
+                # Return default classifications for all leads
+                return [
+                    {
+                        "lead_id": lead.get("lead_id", ""),
+                        "tier": "medium",
+                        "tier_reason": "Classification failed - API error",
+                        "warm_connections": ""
+                    }
+                    for lead in leads_data
+                ]
+            
+            data = response.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+            
+            # Parse response - could be wrapped in a JSON object with a "classifications" key
+            try:
+                parsed = json.loads(content)
+                # Check if it's wrapped in an object
+                if isinstance(parsed, dict) and "classifications" in parsed:
+                    classifications = parsed["classifications"]
+                elif isinstance(parsed, list):
+                    classifications = parsed
+                else:
+                    # Single object - wrap in array
+                    classifications = [parsed]
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse batch classification JSON response")
+                classifications = []
+            
+            # Map results back to lead IDs
+            results = []
+            for idx, lead_info in enumerate(leads_data):
+                lead_id = lead_info.get("lead_id", f"lead_{idx}")
+                
+                if idx < len(classifications):
+                    classification = classifications[idx]
+                    tier = classification.get("tier", "medium").lower()
+                    if tier not in ["good", "medium", "bad"]:
+                        tier = "medium"
+                    
+                    results.append({
+                        "lead_id": classification.get("lead_id", lead_id),
+                        "tier": tier,
+                        "tier_reason": classification.get("tier_reason", "No reason provided"),
+                        "warm_connections": classification.get("warm_connections", "")
+                    })
+                else:
+                    # Default if classification missing
+                    results.append({
+                        "lead_id": lead_id,
+                        "tier": "medium",
+                        "tier_reason": "Classification result missing",
+                        "warm_connections": ""
+                    })
+            
+            return results
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse batch classification JSON response: {e}")
+            return [
+                {
+                    "lead_id": lead.get("lead_id", ""),
+                    "tier": "medium",
+                    "tier_reason": "Classification failed - invalid response format",
+                    "warm_connections": ""
+                }
+                for lead in leads_data
+            ]
+        except Exception as e:
+            logger.error(f"Error classifying leads batch: {e}", exc_info=True)
+            return [
+                {
+                    "lead_id": lead.get("lead_id", ""),
+                    "tier": "medium",
+                    "tier_reason": f"Classification failed - {str(e)}",
+                    "warm_connections": ""
+                }
+                for lead in leads_data
+            ]
 

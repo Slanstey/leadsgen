@@ -116,6 +116,7 @@ export function CsvUploadDialog({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const [stagedLeads, setStagedLeads] = useState<ProcessedLeadRecord[]>([]);
+  const classificationAbortControllerRef = useRef<AbortController | null>(null);
 
   const requiredLeadFields = [
     { key: "company_name", label: "Company Name" },
@@ -368,29 +369,34 @@ export function CsvUploadDialog({
     return autoMapping;
   };
 
-  // Function to classify a lead using the backend API
-  const classifyLead = async (leadId: string, tenantId: string) => {
+  // Function to classify leads in batches using the backend API
+  const classifyLeadsBatch = async (leadIds: string[], tenantId: string, signal?: AbortSignal) => {
+    if (leadIds.length === 0) return;
+
     try {
       const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${backendUrl}/api/classify-lead`, {
+      const response = await fetch(`${backendUrl}/api/classify-leads-batch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          lead_id: leadId,
+          lead_ids: leadIds,
           tenant_id: tenantId,
         }),
+        signal, // Support cancellation
       });
 
       if (!response.ok) {
-        throw new Error(`Classification failed: ${response.statusText}`);
+        throw new Error(`Batch classification failed: ${response.statusText}`);
       }
 
-      // Classification successful - only log errors to reduce console noise
-      // Individual classification results are not logged to avoid spam
-    } catch (error) {
-      console.error(`[CSV Upload] Error classifying lead ${leadId}:`, error);
+      // Classification successful - batch processing is much faster
+    } catch (error: any) {
+      // Don't log AbortError (user cancelled)
+      if (error.name !== 'AbortError') {
+        console.error(`[CSV Upload] Error classifying leads batch:`, error);
+      }
       // Don't throw - classification failure shouldn't block the upload
     }
   };
@@ -720,6 +726,9 @@ export function CsvUploadDialog({
     setIsUploading(true);
     setUploadProgress({ current: 0, total: 0 });
 
+    // Create abort controller for classification cancellation
+    classificationAbortControllerRef.current = new AbortController();
+
     try {
       // Track unique companies by name
       const companyMap = new Map<string, { id: string; created: boolean }>();
@@ -997,6 +1006,8 @@ export function CsvUploadDialog({
 
       // Step 8: Insert new leads in batches
       // Increased batch size for better performance with large uploads
+      const newlyCreatedLeadIds: string[] = []; // Track IDs for batch classification
+
       if (leadsToInsert.length > 0) {
         const batchSize = 200;
         setUploadProgress({ current: 0, total: leadsToInsert.length });
@@ -1038,12 +1049,12 @@ export function CsvUploadDialog({
 
                     if (newLead) {
                       leadsCreated++;
+                      // Track ID for batch classification
+                      if (newLead.id) {
+                        newlyCreatedLeadIds.push(newLead.id);
+                      }
                       // Add to existing set to avoid future duplicates in this batch
                       existingLeadsSet.add(key);
-                      // Classify lead asynchronously
-                      classifyLead(newLead.id, tenantId).catch(err => {
-                        console.error("[CSV Upload] Error classifying lead:", err);
-                      });
                     } else if (insertError && insertError.code === "23505") {
                       // Still a duplicate, skip it
                       leadsSkipped++;
@@ -1059,11 +1070,11 @@ export function CsvUploadDialog({
               }
             } else if (insertedLeads) {
               leadsCreated += insertedLeads.length;
-              // Classify all inserted leads asynchronously
+              // Track IDs for batch classification
               insertedLeads.forEach((lead: any) => {
-                classifyLead(lead.id, tenantId).catch(err => {
-                  console.error("[CSV Upload] Error classifying lead:", err);
-                });
+                if (lead.id) {
+                  newlyCreatedLeadIds.push(lead.id);
+                }
               });
             }
           } catch (error: any) {
@@ -1074,6 +1085,34 @@ export function CsvUploadDialog({
       }
 
       leadsSkipped += existingLeadsSet.size;
+
+      // Batch classify all newly created leads (if any)
+      if (newlyCreatedLeadIds.length > 0 && classificationAbortControllerRef.current) {
+        try {
+          // Process in batches of 50 to avoid overwhelming the API
+          const BATCH_SIZE = 50;
+          for (let i = 0; i < newlyCreatedLeadIds.length; i += BATCH_SIZE) {
+            const batch = newlyCreatedLeadIds.slice(i, i + BATCH_SIZE);
+
+            // Check if classification was cancelled
+            if (classificationAbortControllerRef.current?.signal.aborted) {
+              console.log("[CSV Upload] Classification cancelled by user");
+              break;
+            }
+
+            await classifyLeadsBatch(
+              batch,
+              tenantId,
+              classificationAbortControllerRef.current?.signal
+            );
+          }
+        } catch (error: any) {
+          // Don't fail the upload if classification fails
+          if (error.name !== 'AbortError') {
+            console.error("[CSV Upload] Error during batch classification:", error);
+          }
+        }
+      }
 
       // Build success message
       const messages: string[] = [];
@@ -1142,6 +1181,11 @@ export function CsvUploadDialog({
     } finally {
       console.log("[CSV Upload] Setting uploading state to false");
       setIsUploading(false);
+      // Cancel any ongoing classification and clean up
+      if (classificationAbortControllerRef.current) {
+        classificationAbortControllerRef.current.abort();
+        classificationAbortControllerRef.current = null;
+      }
     }
   };
 
@@ -1159,36 +1203,44 @@ export function CsvUploadDialog({
 
   const handleClose = (open: boolean) => {
     console.log("[CSV Upload] Dialog close requested, open:", open, "isUploading:", isUploading);
-    if (!open && !isUploading) {
-      console.log("[CSV Upload] Resetting state and closing dialog");
-      setFile(null);
-      setFileText("");
-      setCsvSeparator(",");
-      setParsedData([]);
-      setHeaders([]);
-      setColumnMapping({
-        company_name: "",
-        contact_person: "",
-        contact_email: "",
-        role: "",
-        status: "",
-        tier: "",
-        tier_reason: "",
-        warm_connections: "",
-        is_connected_to_tenant: "",
-        company_location: "",
-        company_industry: "",
-        company_sub_industry: "",
-        company_annual_revenue: "",
-        company_description: "",
-      });
-      setStagedLeads([]);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+    if (!open) {
+      // Cancel any ongoing classification when dialog closes
+      if (classificationAbortControllerRef.current) {
+        classificationAbortControllerRef.current.abort();
+        classificationAbortControllerRef.current = null;
       }
-      onOpenChange(false);
-    } else if (!open && isUploading) {
-      console.log("[CSV Upload] Dialog close prevented - upload in progress");
+
+      if (!isUploading) {
+        console.log("[CSV Upload] Resetting state and closing dialog");
+        setFile(null);
+        setFileText("");
+        setCsvSeparator(",");
+        setParsedData([]);
+        setHeaders([]);
+        setColumnMapping({
+          company_name: "",
+          contact_person: "",
+          contact_email: "",
+          role: "",
+          status: "",
+          tier: "",
+          tier_reason: "",
+          warm_connections: "",
+          is_connected_to_tenant: "",
+          company_location: "",
+          company_industry: "",
+          company_sub_industry: "",
+          company_annual_revenue: "",
+          company_description: "",
+        });
+        setStagedLeads([]);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        onOpenChange(false);
+      } else {
+        console.log("[CSV Upload] Dialog close prevented - upload in progress");
+      }
     }
   };
 
