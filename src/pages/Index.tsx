@@ -262,7 +262,7 @@ const Index = () => {
           contactEmail: lead.contact_email,
           role: lead.role,
           status: lead.status as LeadStatus,
-          tier: (lead.tier as LeadTier) || "medium",
+          tier: (lead.tier as LeadTier) || "2nd",
           tierReason: lead.tier_reason,
           warmConnections: lead.warm_connections,
           isConnectedToTenant: lead.is_connected_to_tenant,

@@ -160,21 +160,22 @@ class DatabaseService:
                 if company_result.data and len(company_result.data) > 0:
                     company_data = company_result.data[0]
             
-            # Use tier/tier_reason/warm_connections from lead_data if provided, otherwise classify
-            tier = lead_data.get("tier", "medium")
+            # Use tier/tier_reason/warm_connections from lead_data if provided
+            tier = lead_data.get("tier", "2nd")
             tier_reason = lead_data.get("tier_reason", "")
             warm_connections = lead_data.get("warm_connections", "")
-            
+
+            # LLM classification disabled - tier now represents connection degree (1st/2nd/3rd)
             # Only classify if tier/tier_reason are not already set
-            if not tier or tier == "medium" and not tier_reason and self.llm_service:
-                try:
-                    classification = self.llm_service.classify_lead(lead_data, company_data)
-                    tier = classification.get("tier", tier or "medium")
-                    tier_reason = classification.get("tier_reason", tier_reason)
-                    warm_connections = classification.get("warm_connections", warm_connections)
-                except Exception as e:
-                    logger.error(f"Error classifying lead: {e}")
-                    # Continue with existing or default values
+            # if not tier or tier == "2nd" and not tier_reason and self.llm_service:
+            #     try:
+            #         classification = self.llm_service.classify_lead(lead_data, company_data)
+            #         tier = classification.get("tier", tier or "2nd")
+            #         tier_reason = classification.get("tier_reason", tier_reason)
+            #         warm_connections = classification.get("warm_connections", warm_connections)
+            #     except Exception as e:
+            #         logger.error(f"Error classifying lead: {e}")
+            #         # Continue with existing or default values
             
             # Use status from lead_data if provided, otherwise default to "not_contacted"
             status = lead_data.get("status", "not_contacted")

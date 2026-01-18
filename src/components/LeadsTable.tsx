@@ -332,11 +332,13 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                   Warm Connections
                 </TableHead>
               )}
+              {/* LinkedIn Connected column - disabled
               {visibility.isConnectedToTenant && (
                 <TableHead className="h-14 font-semibold text-sm w-[140px]">
                   LinkedIn Connected
                 </TableHead>
               )}
+              */}
               {visibility.actions && (
                 <TableHead className="h-14 font-semibold text-sm text-right">
                   Actions
@@ -503,6 +505,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                       )}
                     </TableCell>
                   )}
+                  {/* LinkedIn Connected cell - disabled
                   {visibility.isConnectedToTenant && (
                     <TableCell className="py-5 px-4 w-[140px]">
                       {lead.isConnectedToTenant ? (
@@ -517,9 +520,11 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                       )}
                     </TableCell>
                   )}
+                  */}
                   {visibility.actions && (
                     <TableCell className="py-5 px-4 text-right">
                       <div className="flex justify-end gap-2">
+                        {/* Send Email button - disabled
                         <Button
                           variant="ghost"
                           size="sm"
@@ -529,6 +534,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                         >
                           <Mail className="h-4 w-4" />
                         </Button>
+                        */}
                         <Button
                           variant="ghost"
                           size="sm"

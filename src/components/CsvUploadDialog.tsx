@@ -59,7 +59,7 @@ interface ProcessedLeadRecord {
     contact_email: string;
     role: string;
     status: "not_contacted" | "contacted" | "qualified" | "in_progress" | "closed_won" | "closed_lost" | "ignored";
-    tier: "good" | "medium" | "bad";
+    tier: "1st" | "2nd" | "3rd";
     tier_reason?: string;
     warm_connections?: string;
     is_connected_to_tenant?: boolean;
@@ -127,10 +127,10 @@ export function CsvUploadDialog({
   const optionalLeadFields = [
     { key: "contact_email", label: "Contact Email", required: false },
     { key: "status", label: "Status", required: false },
-    { key: "tier", label: "Tier (good/medium/bad)", required: false },
+    { key: "tier", label: "Tier (1st/2nd/3rd degree)", required: false },
     { key: "tier_reason", label: "Tier Reason", required: false },
     { key: "warm_connections", label: "Warm Connections", required: false },
-    { key: "is_connected_to_tenant", label: "Is Connected to Tenant (LinkedIn)", required: false },
+    // { key: "is_connected_to_tenant", label: "Is Connected to Tenant (LinkedIn)", required: false },
   ];
 
   const optionalCompanyFields = [
@@ -546,18 +546,31 @@ export function CsvUploadDialog({
         const tierRaw = columnMapping.tier
           ? row[columnMapping.tier]?.toString().trim().toLowerCase() || ""
           : "";
-        // Map tier values to valid enum values
-        let tier: "good" | "medium" | "bad" = "medium";
+        // Map tier values to connection degree (1st/2nd/3rd)
+        let tier: "1st" | "2nd" | "3rd" = "2nd";
         if (tierRaw) {
-          const tierMap: Record<string, "good" | "medium" | "bad"> = {
-            "good": "good",
-            "medium": "medium",
-            "bad": "bad",
-            "1": "good",
-            "2": "medium",
-            "3": "bad",
+          const tierMap: Record<string, "1st" | "2nd" | "3rd"> = {
+            // Direct mappings
+            "1st": "1st",
+            "2nd": "2nd",
+            "3rd": "3rd",
+            // Numeric mappings
+            "1": "1st",
+            "2": "2nd",
+            "3": "3rd",
+            // Word mappings
+            "first": "1st",
+            "second": "2nd",
+            "third": "3rd",
+            // Tier prefix mappings
+            "tier 1": "1st",
+            "tier1": "1st",
+            "tier 2": "2nd",
+            "tier2": "2nd",
+            "tier 3": "3rd",
+            "tier3": "3rd",
           };
-          tier = tierMap[tierRaw] || "medium";
+          tier = tierMap[tierRaw] || "2nd";
         }
 
         const tierReason = columnMapping.tier_reason
@@ -1493,7 +1506,7 @@ export function CsvUploadDialog({
                       <TableHead>Role</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Tier</TableHead>
-                      <TableHead>LinkedIn Connected</TableHead>
+                      {/* <TableHead>LinkedIn Connected</TableHead> */}
                       <TableHead className="w-[60px] text-right">Remove</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1510,9 +1523,11 @@ export function CsvUploadDialog({
                         <TableCell className="capitalize text-xs">
                           {item.lead.tier}
                         </TableCell>
+                        {/* LinkedIn Connected cell - disabled
                         <TableCell className="text-xs">
                           {item.lead.is_connected_to_tenant ? "Yes" : "No"}
                         </TableCell>
+                        */}
                         <TableCell className="text-right">
                           <Button
                             type="button"

@@ -7,7 +7,7 @@ export type LeadStatus =
   | "closed_lost"
   | "ignored";
 
-export type LeadTier = "good" | "medium" | "bad";
+export type LeadTier = "1st" | "2nd" | "3rd";
 
 export interface Lead {
   id: string;

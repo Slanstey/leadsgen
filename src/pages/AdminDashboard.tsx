@@ -40,7 +40,7 @@ type GeneratedLeadStatus =
   | "closed_won"
   | "closed_lost";
 
-type GeneratedLeadTier = "good" | "medium" | "bad";
+type GeneratedLeadTier = "1st" | "2nd" | "3rd";
 
 interface GeneratedLeadPreview {
   company_name: string;
@@ -324,7 +324,7 @@ const AdminDashboard = () => {
             contact_email: lead.contact_email || lead.contactEmail || lead.email || "",
             role: lead.role || lead.title || lead.position || "",
             status: (lead.status as GeneratedLeadStatus) || "not_contacted",
-            tier: (lead.tier as GeneratedLeadTier) || "medium",
+            tier: (lead.tier as GeneratedLeadTier) || "2nd",
           }));
 
           console.log("[AdminDashboard] Opening preview dialog with", leads.length, "leads");
