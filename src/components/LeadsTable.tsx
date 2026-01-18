@@ -1,6 +1,5 @@
 import { useState, Fragment } from "react";
 import { Lead, LeadStatus } from "@/types/lead";
-import { useNavigate } from "react-router-dom";
 import {
   Table,
   TableBody,
@@ -34,7 +33,7 @@ interface LeadsTableProps {
   fieldVisibility?: FieldVisibilityConfig;
 }
 
-type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "createdAt" | null;
+type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "followsOnLinkedin" | "createdAt" | null;
 type SortDirection = "asc" | "desc" | null;
 
 const statusConfig: Record<
@@ -59,33 +58,19 @@ const statusConfig: Record<
     itemClass:
       "bg-sky-50 text-sky-800 dark:bg-sky-900 dark:text-sky-100 data-[highlighted]:bg-sky-100 dark:data-[highlighted]:bg-sky-800",
   },
-  qualified: {
-    label: "Qualified",
-    triggerClass:
-      "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100 border-transparent",
-    itemClass:
-      "bg-emerald-50 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100 data-[highlighted]:bg-emerald-100 dark:data-[highlighted]:bg-emerald-800",
-  },
-  in_progress: {
-    label: "In Progress",
+  discussing_scope: {
+    label: "Discussing Scope",
     triggerClass:
       "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 border-transparent",
     itemClass:
       "bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100 data-[highlighted]:bg-blue-100 dark:data-[highlighted]:bg-blue-800",
   },
-  closed_won: {
-    label: "Closed Won",
+  proposal_delivered: {
+    label: "Proposal Delivered",
     triggerClass:
       "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100 border-transparent",
     itemClass:
       "bg-emerald-50 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100 data-[highlighted]:bg-emerald-100 dark:data-[highlighted]:bg-emerald-800",
-  },
-  closed_lost: {
-    label: "Closed Lost",
-    triggerClass:
-      "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100 border-transparent",
-    itemClass:
-      "bg-rose-50 text-rose-800 dark:bg-rose-900 dark:text-rose-100 data-[highlighted]:bg-rose-100 dark:data-[highlighted]:bg-rose-800",
   },
   ignored: {
     label: "Ignored",
@@ -97,7 +82,6 @@ const statusConfig: Record<
 };
 
 export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibility }: LeadsTableProps) {
-  const navigate = useNavigate();
   const { profile } = useAuth();
   const [commentingLead, setCommentingLead] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
@@ -123,10 +107,6 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
       setCommentingLead(null);
       toast.success("Comment added successfully");
     }
-  };
-
-  const handleCompanyClick = (companyName: string) => {
-    navigate(`/company/${encodeURIComponent(companyName)}`);
   };
 
   const handleOpenEmailDialog = (lead: Lead) => {
@@ -214,6 +194,10 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
         aValue = a.createdAt.getTime();
         bValue = b.createdAt.getTime();
         break;
+      case "followsOnLinkedin":
+        aValue = a.followsOnLinkedin ? 1 : 0;
+        bValue = b.followsOnLinkedin ? 1 : 0;
+        break;
       default:
         return 0;
     }
@@ -269,7 +253,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
               )}
               {visibility.details && (
                 <TableHead className="h-14 font-semibold text-sm min-w-[200px] max-w-[250px]">
-                  Details
+                  Location
                 </TableHead>
               )}
               {visibility.contactPerson && (
@@ -278,11 +262,12 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                   onClick={() => handleSort("contactPerson")}
                 >
                   <div className="flex items-center">
-                    Contact Person
+                    Lead
                     <SortIcon column="contactPerson" />
                   </div>
                 </TableHead>
               )}
+              {/* Email column header - disabled
               {visibility.contactEmail && (
                 <TableHead
                   className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[180px]"
@@ -294,6 +279,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                   </div>
                 </TableHead>
               )}
+              */}
               {visibility.role && (
                 <TableHead
                   className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
@@ -332,6 +318,32 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                   Warm Connections
                 </TableHead>
               )}
+              {visibility.followsOnLinkedin && (
+                <TableHead
+                  className="h-14 font-semibold text-sm w-[140px] cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("followsOnLinkedin")}
+                >
+                  <div className="flex items-center">
+                    Follows You
+                    <SortIcon column="followsOnLinkedin" />
+                  </div>
+                </TableHead>
+              )}
+              {visibility.marketCapitalisation && (
+                <TableHead className="h-14 font-semibold text-sm w-[140px]">
+                  Market Cap
+                </TableHead>
+              )}
+              {visibility.companySizeInterval && (
+                <TableHead className="h-14 font-semibold text-sm w-[140px]">
+                  Company Size
+                </TableHead>
+              )}
+              {visibility.commodityFields && (
+                <TableHead className="h-14 font-semibold text-sm w-[150px]">
+                  Commodities
+                </TableHead>
+              )}
               {/* LinkedIn Connected column - disabled
               {visibility.isConnectedToTenant && (
                 <TableHead className="h-14 font-semibold text-sm w-[140px]">
@@ -349,19 +361,16 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
           <TableBody>
             {sortedLeads.map((lead, index) => (
               <Fragment key={lead.id}>
-                <TableRow 
-                  className={`group border-b border-border/50 hover:bg-success/8 hover:border-success/40 transition-all duration-200 cursor-pointer ${
+                <TableRow
+                  className={`group border-b border-border/50 hover:bg-success/8 hover:border-success/40 transition-all duration-200 ${
                     isNewLead(lead) ? "border-l-4 border-l-success bg-success/5" : ""
                   } ${index % 2 === 0 ? "bg-background" : "bg-muted/10"}`}
                 >
                   {visibility.company && (
                     <TableCell className="py-5 px-4">
-                      <button
-                        onClick={() => handleCompanyClick(lead.companyName)}
-                        className="font-semibold text-primary hover:text-primary/80 hover:underline transition-colors text-left"
-                      >
+                      <span className="font-semibold text-foreground">
                         {lead.companyName}
-                      </button>
+                      </span>
                     </TableCell>
                   )}
                   {visibility.details && (
@@ -396,10 +405,11 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                       <span className="text-sm">{lead.contactPerson}</span>
                     </TableCell>
                   )}
+                  {/* Email column cell - disabled
                   {visibility.contactEmail && (
                     <TableCell className="py-5 px-4 w-[180px]">
                       {lead.contactEmail ? (
-                        <a 
+                        <a
                           href={`mailto:${lead.contactEmail}`}
                           className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5 group/email"
                         >
@@ -411,6 +421,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                       )}
                     </TableCell>
                   )}
+                  */}
                   {visibility.role && (
                     <TableCell className="py-5 px-4">
                       <span className="text-sm">{lead.role}</span>
@@ -453,31 +464,31 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                                 {statusConfig.not_contacted.label}
                               </SelectItem>
                               <SelectItem
-                                value="in_progress"
+                                value="contacted"
                                 className={cn(
                                   "text-xs font-medium",
-                                  statusConfig.in_progress.itemClass
+                                  statusConfig.contacted.itemClass
                                 )}
                               >
-                                {statusConfig.in_progress.label}
+                                {statusConfig.contacted.label}
                               </SelectItem>
                               <SelectItem
-                                value="closed_won"
+                                value="discussing_scope"
                                 className={cn(
                                   "text-xs font-medium",
-                                  statusConfig.closed_won.itemClass
+                                  statusConfig.discussing_scope.itemClass
                                 )}
                               >
-                                {statusConfig.closed_won.label}
+                                {statusConfig.discussing_scope.label}
                               </SelectItem>
                               <SelectItem
-                                value="closed_lost"
+                                value="proposal_delivered"
                                 className={cn(
                                   "text-xs font-medium",
-                                  statusConfig.closed_lost.itemClass
+                                  statusConfig.proposal_delivered.itemClass
                                 )}
                               >
-                                {statusConfig.closed_lost.label}
+                                {statusConfig.proposal_delivered.label}
                               </SelectItem>
                               <SelectItem
                                 value="ignored"
@@ -502,6 +513,46 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                         </span>
                       ) : (
                         <span className="text-xs text-muted-foreground/50 italic">None</span>
+                      )}
+                    </TableCell>
+                  )}
+                  {visibility.followsOnLinkedin && (
+                    <TableCell className="py-5 px-4 w-[140px]">
+                      {lead.followsOnLinkedin ? (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100 text-xs font-medium">
+                          Yes
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/60 text-muted-foreground text-xs">
+                          No
+                        </span>
+                      )}
+                    </TableCell>
+                  )}
+                  {visibility.marketCapitalisation && (
+                    <TableCell className="py-5 px-4 w-[140px]">
+                      {lead.marketCapitalisation ? (
+                        <span className="text-sm">{lead.marketCapitalisation}</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/50 italic">-</span>
+                      )}
+                    </TableCell>
+                  )}
+                  {visibility.companySizeInterval && (
+                    <TableCell className="py-5 px-4 w-[140px]">
+                      {lead.companySizeInterval ? (
+                        <span className="text-sm">{lead.companySizeInterval}</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/50 italic">-</span>
+                      )}
+                    </TableCell>
+                  )}
+                  {visibility.commodityFields && (
+                    <TableCell className="py-5 px-4 w-[150px]">
+                      {lead.commodityFields ? (
+                        <span className="text-xs text-muted-foreground block line-clamp-2">{lead.commodityFields}</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/50 italic">-</span>
                       )}
                     </TableCell>
                   )}

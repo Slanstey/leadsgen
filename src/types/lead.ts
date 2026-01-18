@@ -1,10 +1,8 @@
-export type LeadStatus = 
-  | "not_contacted" 
-  | "contacted" 
-  | "qualified" 
-  | "in_progress" 
-  | "closed_won" 
-  | "closed_lost"
+export type LeadStatus =
+  | "not_contacted"
+  | "contacted"
+  | "discussing_scope"
+  | "proposal_delivered"
   | "ignored";
 
 export type LeadTier = "1st" | "2nd" | "3rd";
@@ -20,6 +18,10 @@ export interface Lead {
   tierReason?: string;
   warmConnections?: string;
   isConnectedToTenant?: boolean;
+  followsOnLinkedin?: boolean;
+  marketCapitalisation?: string;
+  companySizeInterval?: string;
+  commodityFields?: string;
   comments: Comment[];
   createdAt: Date;
   updatedAt: Date;
