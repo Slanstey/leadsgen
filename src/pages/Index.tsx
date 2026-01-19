@@ -141,9 +141,28 @@ const Index = () => {
       const existing = (data as any)?.field_visibility as Partial<FieldVisibilityConfig> | null;
 
       if (existing && typeof existing === "object") {
+        // Migrate old "details" field to individual fields
+        const migratedVisibility: Partial<FieldVisibilityConfig> = { ...existing };
+        if ("details" in migratedVisibility && !("industry" in migratedVisibility)) {
+          const detailsValue = migratedVisibility.details as boolean | undefined;
+          migratedVisibility.industry = detailsValue ?? true;
+          migratedVisibility.location = detailsValue ?? true;
+          migratedVisibility.description = detailsValue ?? true;
+          delete (migratedVisibility as any).details;
+        }
+
+        // Migrate old "actions" field to individual action fields
+        if ("actions" in migratedVisibility && !("actionEmail" in migratedVisibility)) {
+          const actionsValue = migratedVisibility.actions as boolean | undefined;
+          migratedVisibility.actionEmail = actionsValue ?? true;
+          migratedVisibility.actionFeedback = actionsValue ?? true;
+          migratedVisibility.actionComments = actionsValue ?? true;
+          delete (migratedVisibility as any).actions;
+        }
+
         setFieldVisibility({
           ...defaultFieldVisibility,
-          ...existing,
+          ...migratedVisibility,
         });
       } else {
         setFieldVisibility(defaultFieldVisibility);

@@ -329,9 +329,28 @@ const AdminTenantDetail = () => {
           | Partial<FieldVisibilityConfig>
           | null;
         if (existingVisibility && typeof existingVisibility === "object") {
+          // Migrate old "details" field to individual fields
+          const migratedVisibility: Partial<FieldVisibilityConfig> = { ...existingVisibility };
+          if ("details" in migratedVisibility && !("industry" in migratedVisibility)) {
+            const detailsValue = migratedVisibility.details as boolean | undefined;
+            migratedVisibility.industry = detailsValue ?? true;
+            migratedVisibility.location = detailsValue ?? true;
+            migratedVisibility.description = detailsValue ?? true;
+            delete (migratedVisibility as any).details;
+          }
+          
+          // Migrate old "actions" field to individual action fields
+          if ("actions" in migratedVisibility && !("actionEmail" in migratedVisibility)) {
+            const actionsValue = migratedVisibility.actions as boolean | undefined;
+            migratedVisibility.actionEmail = actionsValue ?? true;
+            migratedVisibility.actionFeedback = actionsValue ?? true;
+            migratedVisibility.actionComments = actionsValue ?? true;
+            delete (migratedVisibility as any).actions;
+          }
+          
           setFieldVisibility({
             ...defaultFieldVisibility,
-            ...existingVisibility,
+            ...migratedVisibility,
           });
         } else {
           setFieldVisibility(defaultFieldVisibility);
@@ -993,13 +1012,33 @@ const AdminTenantDetail = () => {
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox
-                    id="field-details"
-                    checked={fieldVisibility.details}
+                    id="field-industry"
+                    checked={fieldVisibility.industry}
                     onCheckedChange={(checked) =>
-                      handleFieldVisibilityChange("details", checked === true)
+                      handleFieldVisibilityChange("industry", checked === true)
                     }
                   />
-                  <Label htmlFor="field-details">Company details (industry, location, description)</Label>
+                  <Label htmlFor="field-industry">Industry</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-location"
+                    checked={fieldVisibility.location}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("location", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-location">Location</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-description"
+                    checked={fieldVisibility.description}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("description", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-description">Description</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox
@@ -1061,27 +1100,83 @@ const AdminTenantDetail = () => {
                   />
                   <Label htmlFor="field-warm-connections">Warm connections</Label>
                 </div>
-                {/* LinkedIn Connected visibility toggle - disabled
                 <div className="flex items-center space-x-2">
                   <Checkbox
-                    id="field-is-connected-to-tenant"
-                    checked={fieldVisibility.isConnectedToTenant}
+                    id="field-follows-on-linkedin"
+                    checked={fieldVisibility.followsOnLinkedin}
                     onCheckedChange={(checked) =>
-                      handleFieldVisibilityChange("isConnectedToTenant", checked === true)
+                      handleFieldVisibilityChange("followsOnLinkedin", checked === true)
                     }
                   />
-                  <Label htmlFor="field-is-connected-to-tenant">LinkedIn Connected</Label>
+                  <Label htmlFor="field-follows-on-linkedin">Follows You</Label>
                 </div>
-                */}
                 <div className="flex items-center space-x-2">
                   <Checkbox
-                    id="field-actions"
-                    checked={fieldVisibility.actions}
+                    id="field-market-capitalisation"
+                    checked={fieldVisibility.marketCapitalisation}
                     onCheckedChange={(checked) =>
-                      handleFieldVisibilityChange("actions", checked === true)
+                      handleFieldVisibilityChange("marketCapitalisation", checked === true)
                     }
                   />
-                  <Label htmlFor="field-actions">Actions (email, feedback, comments)</Label>
+                  <Label htmlFor="field-market-capitalisation">Market Cap</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-company-size-interval"
+                    checked={fieldVisibility.companySizeInterval}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("companySizeInterval", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-company-size-interval">Company Size</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-commodity-fields"
+                    checked={fieldVisibility.commodityFields}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("commodityFields", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-commodity-fields">Commodities</Label>
+                </div>
+              </div>
+              
+              <Separator className="my-4" />
+              
+              <div>
+                <h4 className="text-sm font-medium mb-3">Actions</h4>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="field-action-email"
+                      checked={fieldVisibility.actionEmail}
+                      onCheckedChange={(checked) =>
+                        handleFieldVisibilityChange("actionEmail", checked === true)
+                      }
+                    />
+                    <Label htmlFor="field-action-email">Email</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="field-action-feedback"
+                      checked={fieldVisibility.actionFeedback}
+                      onCheckedChange={(checked) =>
+                        handleFieldVisibilityChange("actionFeedback", checked === true)
+                      }
+                    />
+                    <Label htmlFor="field-action-feedback">Feedback</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="field-action-comments"
+                      checked={fieldVisibility.actionComments}
+                      onCheckedChange={(checked) =>
+                        handleFieldVisibilityChange("actionComments", checked === true)
+                      }
+                    />
+                    <Label htmlFor="field-action-comments">Comments</Label>
+                  </div>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">

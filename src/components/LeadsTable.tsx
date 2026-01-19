@@ -93,7 +93,23 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
   const visibility = fieldVisibility || defaultFieldVisibility;
-  const visibleColumnCount = Object.values(visibility).filter(Boolean).length || 1;
+  // Calculate visible columns - industry/location/description count as one column if any are visible
+  const hasCompanyDetails = visibility.industry || visibility.location || visibility.description;
+  const hasActions = visibility.actionEmail || visibility.actionFeedback || visibility.actionComments;
+  const visibleColumnCount = 
+    (visibility.company ? 1 : 0) +
+    (hasCompanyDetails ? 1 : 0) +
+    (visibility.contactPerson ? 1 : 0) +
+    (visibility.contactEmail ? 1 : 0) +
+    (visibility.role ? 1 : 0) +
+    (visibility.tier ? 1 : 0) +
+    (visibility.status ? 1 : 0) +
+    (visibility.warmConnections ? 1 : 0) +
+    (visibility.followsOnLinkedin ? 1 : 0) +
+    (visibility.marketCapitalisation ? 1 : 0) +
+    (visibility.companySizeInterval ? 1 : 0) +
+    (visibility.commodityFields ? 1 : 0) +
+    (hasActions ? 1 : 0) || 1;
 
   const isNewLead = (lead: Lead): boolean => {
     const threeDaysAgo = new Date();
@@ -184,7 +200,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                   </div>
                 </TableHead>
               )}
-              {visibility.details && (
+              {(visibility.industry || visibility.location || visibility.description) && (
                 <TableHead className="h-14 font-semibold text-sm min-w-[200px] max-w-[250px]">
                   Location
                 </TableHead>
@@ -296,7 +312,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                 </TableHead>
               )}
               */}
-              {visibility.actions && (
+              {(visibility.actionEmail || visibility.actionFeedback || visibility.actionComments) && (
                 <TableHead className="h-14 font-semibold text-sm text-right">
                   Actions
                 </TableHead>
@@ -318,23 +334,23 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                       </span>
                     </TableCell>
                   )}
-                  {visibility.details && (
+                  {(visibility.industry || visibility.location || visibility.description) && (
                     <TableCell className="py-5 px-4">
                       <div className="flex flex-col gap-1.5 min-w-[200px] max-w-[250px]">
-                        {lead.company?.description && (
+                        {visibility.description && lead.company?.description && (
                           <span className="inline-flex items-start gap-1 px-2 py-1 rounded-md bg-muted/60 text-muted-foreground text-xs line-clamp-2 leading-relaxed">
                             {lead.company.description}
                           </span>
                         )}
-                        {lead.company && (lead.company.industry || lead.company.location) && (
+                        {lead.company && ((visibility.industry && lead.company.industry) || (visibility.location && lead.company.location)) && (
                           <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                            {lead.company.industry && lead.company.industry !== "Unknown" && (
+                            {visibility.industry && lead.company.industry && lead.company.industry !== "Unknown" && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground">
                                 <Building2 className="h-3 w-3 flex-shrink-0" />
                                 <span className="truncate max-w-[120px]">{lead.company.industry}</span>
                               </span>
                             )}
-                            {lead.company.location && (
+                            {visibility.location && lead.company.location && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground">
                                 <MapPin className="h-3 w-3 flex-shrink-0" />
                                 <span className="truncate max-w-[120px]">{lead.company.location}</span>
@@ -517,55 +533,59 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                     </TableCell>
                   )}
                   */}
-                  {visibility.actions && (
+                  {(visibility.actionEmail || visibility.actionFeedback || visibility.actionComments) && (
                     <TableCell className="py-5 px-4 text-right">
                       <div className="flex justify-end gap-2">
-                        {/* Send Email button - disabled
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleOpenEmailDialog(lead)}
-                          title="Send Email"
-                          className="h-9 w-9 p-0 text-muted-foreground hover:text-success hover:bg-success/10 transition-all duration-200"
-                        >
-                          <Mail className="h-4 w-4" />
-                        </Button>
-                        */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleOpenFeedbackDialog(lead)}
-                          title="Provide Feedback"
-                          className="h-9 w-9 p-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-200"
-                        >
-                          <MessageSquareText className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setCommentingLead(commentingLead === lead.id ? null : lead.id)}
-                          title={commentingLead === lead.id ? "Close Comments" : "View/Add Comments"}
-                          className={`h-9 w-9 p-0 relative transition-all duration-200 ${
-                            commentingLead === lead.id
-                              ? "text-success bg-success/10"
-                              : lead.comments.length > 0
-                              ? "text-primary hover:text-success hover:bg-success/10"
-                              : "text-muted-foreground hover:text-success hover:bg-success/10"
-                          }`}
-                        >
-                          {commentingLead === lead.id ? (
-                            <X className="h-4 w-4" />
-                          ) : (
-                            <>
-                              <MessageSquare className="h-4 w-4" />
-                              {lead.comments.length > 0 && (
-                                <span className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[10px] font-semibold text-primary-foreground bg-primary rounded-full">
-                                  {lead.comments.length}
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </Button>
+                        {visibility.actionEmail && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleOpenEmailDialog(lead)}
+                            title="Send Email"
+                            className="h-9 w-9 p-0 text-muted-foreground hover:text-success hover:bg-success/10 transition-all duration-200"
+                          >
+                            <Mail className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {visibility.actionFeedback && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleOpenFeedbackDialog(lead)}
+                            title="Provide Feedback"
+                            className="h-9 w-9 p-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-200"
+                          >
+                            <MessageSquareText className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {visibility.actionComments && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setCommentingLead(commentingLead === lead.id ? null : lead.id)}
+                            title={commentingLead === lead.id ? "Close Comments" : "View/Add Comments"}
+                            className={`h-9 w-9 p-0 relative transition-all duration-200 ${
+                              commentingLead === lead.id
+                                ? "text-success bg-success/10"
+                                : lead.comments.length > 0
+                                ? "text-primary hover:text-success hover:bg-success/10"
+                                : "text-muted-foreground hover:text-success hover:bg-success/10"
+                            }`}
+                          >
+                            {commentingLead === lead.id ? (
+                              <X className="h-4 w-4" />
+                            ) : (
+                              <>
+                                <MessageSquare className="h-4 w-4" />
+                                {lead.comments.length > 0 && (
+                                  <span className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[10px] font-semibold text-primary-foreground bg-primary rounded-full">
+                                    {lead.comments.length}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   )}

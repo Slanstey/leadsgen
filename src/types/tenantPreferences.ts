@@ -1,6 +1,8 @@
 export type LeadFieldKey =
   | "company"
-  | "details"
+  | "industry"
+  | "location"
+  | "description"
   | "contactPerson"
   | "contactEmail"
   | "role"
@@ -12,13 +14,17 @@ export type LeadFieldKey =
   | "marketCapitalisation"
   | "companySizeInterval"
   | "commodityFields"
-  | "actions";
+  | "actionEmail"
+  | "actionFeedback"
+  | "actionComments";
 
 export type FieldVisibilityConfig = Record<LeadFieldKey, boolean>;
 
 export const defaultFieldVisibility: FieldVisibilityConfig = {
   company: true,
-  details: true,
+  industry: true,
+  location: true,
+  description: true,
   contactPerson: true,
   contactEmail: true,
   role: true,
@@ -30,7 +36,9 @@ export const defaultFieldVisibility: FieldVisibilityConfig = {
   marketCapitalisation: true,
   companySizeInterval: true,
   commodityFields: true,
-  actions: true,
+  actionEmail: true,
+  actionFeedback: true,
+  actionComments: true,
 };
 
 
