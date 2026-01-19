@@ -35,10 +35,9 @@ interface Tenant {
 type GeneratedLeadStatus =
   | "not_contacted"
   | "contacted"
-  | "qualified"
-  | "in_progress"
-  | "closed_won"
-  | "closed_lost";
+  | "discussing_scope"
+  | "proposal_delivered"
+  | "ignored";
 
 type GeneratedLeadTier = "1st" | "2nd" | "3rd";
 

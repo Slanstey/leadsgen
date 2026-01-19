@@ -105,9 +105,9 @@ test.describe('Dashboard Navigation', () => {
     await statusFilter.click();
     
     // Select a status option if available
-    const qualifiedOption = page.getByRole('option', { name: /qualified/i });
-    if (await qualifiedOption.count() > 0) {
-      await qualifiedOption.first().click();
+    const contactedOption = page.getByRole('option', { name: /contacted/i });
+    if (await contactedOption.count() > 0) {
+      await contactedOption.first().click();
       // Verify filter dropdown is still visible (or closed)
       await page.waitForTimeout(500); // Wait for filter to apply
     }
