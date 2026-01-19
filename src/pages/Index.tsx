@@ -806,19 +806,18 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Refined header with subtle elevation */}
-      <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 shadow-soft">
+      <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-soft">
-                <BarChart3 className="h-5 w-5" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <BarChart3 className="h-4 w-4" />
               </div>
               <div>
-                <h1 className="text-xl font-semibold tracking-tight bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                <h1 className="text-lg font-semibold tracking-tight text-foreground">
                   LeadFlow
                 </h1>
-                <p className="text-xs text-muted-foreground hidden sm:block">Lead Generation Dashboard</p>
+                <p className="text-xs text-muted-foreground hidden sm:block">Track and manage your lead pipeline with precision</p>
               </div>
             </div>
             <DropdownMenu>
@@ -858,88 +857,66 @@ const Index = () => {
         </div>
       </header>
 
-      <main className="w-full px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
-        {/* Page header with better typography and staggered animation */}
-        <div className="mb-8 lg:mb-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <h2 className="text-3xl lg:text-4xl font-bold tracking-tight mb-2 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-            Active Leads
-          </h2>
-          <p className="text-muted-foreground text-base">
-            Track and manage your lead pipeline with precision
-          </p>
-        </div>
-
-        {/* Enhanced stats cards with better visual hierarchy and staggered animations */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8 lg:mb-12">
-          <div className="group relative overflow-hidden rounded-xl bg-card p-6 shadow-soft border border-border/50 hover:shadow-soft-lg transition-all duration-200 hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '0ms' }}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-muted-foreground">Total Leads</div>
-            </div>
-            <div className="text-3xl lg:text-4xl font-bold tracking-tight">
+      <main className="w-full px-4 sm:px-6 lg:px-8 py-8 lg:py-10">
+        {/* Stats cards */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-12">
+          <div className="rounded-lg bg-card p-4 border border-border hover:border-border/80 transition-colors">
+            <div className="text-sm font-medium text-muted-foreground mb-1">Total Leads</div>
+            <div className="text-2xl font-semibold tabular-nums">
               {statusCounts.total}
               {hasActiveFilters && (
-                <span className="text-lg lg:text-xl text-muted-foreground font-normal ml-1">
-                  ({filteredStatusCounts.total} filtered)
+                <span className="text-sm text-muted-foreground font-normal ml-1.5">
+                  ({filteredStatusCounts.total})
                 </span>
               )}
             </div>
-            <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
-          <div className="group relative overflow-hidden rounded-xl bg-card p-6 shadow-soft border border-border/50 hover:shadow-soft-lg transition-all duration-200 hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '100ms' }}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-muted-foreground">Contacted</div>
-            </div>
-            <div className="text-3xl lg:text-4xl font-bold tracking-tight text-sky-600">
+          <div className="rounded-lg bg-card p-4 border border-border hover:border-border/80 transition-colors">
+            <div className="text-sm font-medium text-muted-foreground mb-1">Contacted</div>
+            <div className="text-2xl font-semibold tabular-nums text-sky-600">
               {statusCounts.contacted}
               {hasActiveFilters && (
-                <span className="text-lg lg:text-xl text-muted-foreground font-normal ml-1">
-                  ({filteredStatusCounts.contacted} filtered)
+                <span className="text-sm text-muted-foreground font-normal ml-1.5">
+                  ({filteredStatusCounts.contacted})
                 </span>
               )}
             </div>
-            <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-sky-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
-          <div className="group relative overflow-hidden rounded-xl bg-card p-6 shadow-soft border border-border/50 hover:shadow-soft-lg transition-all duration-200 hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '200ms' }}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-muted-foreground">Discussing Scope</div>
-            </div>
-            <div className="text-3xl lg:text-4xl font-bold tracking-tight text-info">
+          <div className="rounded-lg bg-card p-4 border border-border hover:border-border/80 transition-colors">
+            <div className="text-sm font-medium text-muted-foreground mb-1">Discussing Scope</div>
+            <div className="text-2xl font-semibold tabular-nums text-amber-600">
               {statusCounts.discussingScope}
               {hasActiveFilters && (
-                <span className="text-lg lg:text-xl text-muted-foreground font-normal ml-1">
-                  ({filteredStatusCounts.discussingScope} filtered)
+                <span className="text-sm text-muted-foreground font-normal ml-1.5">
+                  ({filteredStatusCounts.discussingScope})
                 </span>
               )}
             </div>
-            <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-info/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
-          <div className="group relative overflow-hidden rounded-xl bg-card p-6 shadow-soft border border-border/50 hover:shadow-soft-lg transition-all duration-200 hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '300ms' }}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-muted-foreground">Proposal Delivered</div>
-            </div>
-            <div className="text-3xl lg:text-4xl font-bold tracking-tight text-success">
+          <div className="rounded-lg bg-card p-4 border border-border hover:border-border/80 transition-colors">
+            <div className="text-sm font-medium text-muted-foreground mb-1">Proposal Delivered</div>
+            <div className="text-2xl font-semibold tabular-nums text-emerald-600">
               {statusCounts.proposalDelivered}
               {hasActiveFilters && (
-                <span className="text-lg lg:text-xl text-muted-foreground font-normal ml-1">
-                  ({filteredStatusCounts.proposalDelivered} filtered)
+                <span className="text-sm text-muted-foreground font-normal ml-1.5">
+                  ({filteredStatusCounts.proposalDelivered})
                 </span>
               )}
             </div>
-            <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-success/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
         </div>
 
-        {/* Refined filters section */}
-        <div className="mb-8 space-y-4 w-full">
+        {/* Filters section */}
+        <div className="mb-12 space-y-3 w-full">
           {/* Search filters row */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center w-full">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center w-full">
             <div className="relative flex-1 min-w-0">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <Input
                 placeholder="Search companies..."
                 value={companySearch}
                 onChange={(e) => setCompanySearch(e.target.value)}
-                className="pl-9 h-11 bg-background border-2 border-border focus:border-primary transition-colors"
+                className="pl-9 h-9 bg-background"
               />
             </div>
             <div className="relative flex-1 min-w-0">
@@ -948,7 +925,7 @@ const Index = () => {
                 placeholder="Search warm connections..."
                 value={warmConnectionSearch}
                 onChange={(e) => setWarmConnectionSearch(e.target.value)}
-                className="pl-9 h-11 bg-background border-2 border-border focus:border-primary transition-colors"
+                className="pl-9 h-9 bg-background"
               />
             </div>
             <div className="relative flex-1 min-w-0">
@@ -957,17 +934,17 @@ const Index = () => {
                 placeholder="Search commodities..."
                 value={commoditySearch}
                 onChange={(e) => setCommoditySearch(e.target.value)}
-                className="pl-9 h-11 bg-background border-2 border-border focus:border-primary transition-colors"
+                className="pl-9 h-9 bg-background"
               />
             </div>
           </div>
           {/* Dropdown filters row */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center w-full flex-wrap">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center w-full flex-wrap">
             <Select
               value={statusFilter}
               onValueChange={(value) => setStatusFilter(value as LeadStatus | "all")}
             >
-              <SelectTrigger className="flex-1 min-w-[160px] sm:min-w-[180px] h-11 border-2 border-border focus:border-primary transition-colors">
+              <SelectTrigger className="flex-1 min-w-[150px] sm:min-w-[160px] h-9">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -983,7 +960,7 @@ const Index = () => {
               value={tierFilter}
               onValueChange={(value) => setTierFilter(value as LeadTier | "all")}
             >
-              <SelectTrigger className="flex-1 min-w-[140px] sm:min-w-[160px] h-11 border-2 border-border focus:border-primary transition-colors">
+              <SelectTrigger className="flex-1 min-w-[130px] sm:min-w-[140px] h-9">
                 <SelectValue placeholder="Filter by tier" />
               </SelectTrigger>
               <SelectContent>
@@ -997,7 +974,7 @@ const Index = () => {
               value={companySizeFilter}
               onValueChange={(value) => setCompanySizeFilter(value)}
             >
-              <SelectTrigger className="flex-1 min-w-[180px] sm:min-w-[200px] h-11 border-2 border-border focus:border-primary transition-colors">
+              <SelectTrigger className="flex-1 min-w-[160px] sm:min-w-[170px] h-9">
                 <SelectValue placeholder="Filter by company size" />
               </SelectTrigger>
               <SelectContent>
@@ -1013,7 +990,7 @@ const Index = () => {
               value={marketCapFilter}
               onValueChange={(value) => setMarketCapFilter(value)}
             >
-              <SelectTrigger className="flex-1 min-w-[180px] sm:min-w-[200px] h-11 border-2 border-border focus:border-primary transition-colors">
+              <SelectTrigger className="flex-1 min-w-[160px] sm:min-w-[170px] h-9">
                 <SelectValue placeholder="Filter by market cap" />
               </SelectTrigger>
               <SelectContent>
@@ -1030,11 +1007,11 @@ const Index = () => {
           </div>
         </div>
 
-        {/* Pagination Controls - At the top before the table */}
+        {/* Pagination Controls */}
         {!loading && !error && leads.length > 0 && totalFilteredLeads > 0 && (
-          <div className="mb-6 flex flex-col sm:flex-row items-center justify-between w-full gap-2 sm:gap-5">
+          <div className="mb-6 flex flex-col sm:flex-row items-center justify-between w-full gap-2 sm:gap-4">
             {/* Show ignored leads */}
-            <div className="flex items-center gap-2 whitespace-nowrap sm:mr-0">
+            <div className="flex items-center gap-2 whitespace-nowrap">
               <Checkbox
                 id="showIgnored"
                 checked={showIgnored}
@@ -1047,183 +1024,175 @@ const Index = () => {
                 htmlFor="showIgnored"
                 className="text-sm font-normal cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
               >
-                Show ignored leads
+                Show ignored
               </Label>
             </div>
 
             {/* Showing X to X of Y leads */}
-            <div className="text-sm text-muted-foreground whitespace-nowrap sm:mx-0">
-              Showing {startIndex} to {endIndex} of {totalFilteredLeads} leads
+            <div className="text-sm text-muted-foreground whitespace-nowrap">
+              Showing {startIndex}-{endIndex} of {totalFilteredLeads} leads
             </div>
 
             {/* Number of leads per page */}
-            <div className="sm:mx-0">
+            <div className="min-w-[150px]">
               <Select
                 value={pageSize.toString()}
                 onValueChange={(value) => {
                   setPageSize(Number(value));
-                  setCurrentPage(1); // Reset to first page when changing page size
+                  setCurrentPage(1);
                 }}
               >
-                <SelectTrigger className="w-[150px] h-9 px-2 border-2 border-border focus:border-primary transition-colors" >
+                <SelectTrigger className="w-full h-8 text-sm px-3">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="25">25 per page</SelectItem>
-                  <SelectItem value="50">50 per page</SelectItem>
-                  <SelectItem value="100">100 per page</SelectItem>
-                  <SelectItem value="200">200 per page</SelectItem>
+                  <SelectItem value="25">25 / page</SelectItem>
+                  <SelectItem value="50">50 / page</SelectItem>
+                  <SelectItem value="100">100 / page</SelectItem>
+                  <SelectItem value="200">200 / page</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             {/* Pagination */}
-            <div className="sm:mx-0">
-              {totalPages > 1 && (
-                <Pagination>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handlePageChange(currentPage - 1);
-                        }}
-                        className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                        href="#"
-                      />
-                    </PaginationItem>
+            {totalPages > 1 && (
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handlePageChange(currentPage - 1);
+                      }}
+                      className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      href="#"
+                    />
+                  </PaginationItem>
 
-                    {/* First page */}
-                    {currentPage > 3 && (
-                      <>
+                  {currentPage > 3 && (
+                    <>
+                      <PaginationItem>
+                        <PaginationLink
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handlePageChange(1);
+                          }}
+                          className="cursor-pointer"
+                          href="#"
+                        >
+                          1
+                        </PaginationLink>
+                      </PaginationItem>
+                      {currentPage > 4 && (
                         <PaginationItem>
-                          <PaginationLink
-                            onClick={(e) => {
-                              e.preventDefault();
-                              handlePageChange(1);
-                            }}
-                            className="cursor-pointer"
-                            href="#"
-                          >
-                            1
-                          </PaginationLink>
+                          <PaginationEllipsis />
                         </PaginationItem>
-                        {currentPage > 4 && (
-                          <PaginationItem>
-                            <PaginationEllipsis />
-                          </PaginationItem>
-                        )}
-                      </>
-                    )}
+                      )}
+                    </>
+                  )}
 
-                    {/* Page numbers around current page */}
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      let pageNum: number;
-                      if (totalPages <= 5) {
-                        pageNum = i + 1;
-                      } else if (currentPage <= 3) {
-                        pageNum = i + 1;
-                      } else if (currentPage >= totalPages - 2) {
-                        pageNum = totalPages - 4 + i;
-                      } else {
-                        pageNum = currentPage - 2 + i;
-                      }
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum: number;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
 
-                      return (
-                        <PaginationItem key={pageNum}>
-                          <PaginationLink
-                            onClick={(e) => {
-                              e.preventDefault();
-                              handlePageChange(pageNum);
-                            }}
-                            isActive={currentPage === pageNum}
-                            className="cursor-pointer"
-                            href="#"
-                          >
-                            {pageNum}
-                          </PaginationLink>
-                        </PaginationItem>
-                      );
-                    })}
+                    return (
+                      <PaginationItem key={pageNum}>
+                        <PaginationLink
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handlePageChange(pageNum);
+                          }}
+                          isActive={currentPage === pageNum}
+                          className="cursor-pointer"
+                          href="#"
+                        >
+                          {pageNum}
+                        </PaginationLink>
+                      </PaginationItem>
+                    );
+                  })}
 
-                    {/* Last page */}
-                    {currentPage < totalPages - 2 && (
-                      <>
-                        {currentPage < totalPages - 3 && (
-                          <PaginationItem>
-                            <PaginationEllipsis />
-                          </PaginationItem>
-                        )}
+                  {currentPage < totalPages - 2 && (
+                    <>
+                      {currentPage < totalPages - 3 && (
                         <PaginationItem>
-                          <PaginationLink
-                            onClick={(e) => {
-                              e.preventDefault();
-                              handlePageChange(totalPages);
-                            }}
-                            className="cursor-pointer"
-                            href="#"
-                          >
-                            {totalPages}
-                          </PaginationLink>
+                          <PaginationEllipsis />
                         </PaginationItem>
-                      </>
-                    )}
+                      )}
+                      <PaginationItem>
+                        <PaginationLink
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handlePageChange(totalPages);
+                          }}
+                          className="cursor-pointer"
+                          href="#"
+                        >
+                          {totalPages}
+                        </PaginationLink>
+                      </PaginationItem>
+                    </>
+                  )}
 
-                    <PaginationItem>
-                      <PaginationNext
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handlePageChange(currentPage + 1);
-                        }}
-                        className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                        href="#"
-                      />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-              )}
-            </div>
+                  <PaginationItem>
+                    <PaginationNext
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handlePageChange(currentPage + 1);
+                      }}
+                      className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      href="#"
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            )}
 
             {/* Export button */}
-            <div className="sm:mx-0">
-              <Button
-                variant="outline"
-                onClick={() => setExportDialogOpen(true)}
-                className="h-9 border-2 border-border hover:bg-muted/50 hover:border-primary transition-colors whitespace-nowrap"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setExportDialogOpen(true)}
+              className="h-8 whitespace-nowrap"
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              Export
+            </Button>
           </div>
         )}
 
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="text-center space-y-3">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center space-y-2">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mx-auto" />
               <p className="text-sm text-muted-foreground">Loading leads...</p>
             </div>
           </div>
         ) : error ? (
-          <div className="rounded-xl border border-destructive/50 bg-destructive/5 p-8 text-center">
-            <h3 className="text-lg font-semibold text-destructive mb-2">Error Loading Leads</h3>
-            <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">{error}</p>
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
+            <h3 className="text-base font-medium text-destructive mb-1">Error Loading Leads</h3>
+            <p className="text-sm text-muted-foreground mb-4">{error}</p>
             <Button
               onClick={() => window.location.reload()}
               variant="outline"
-              className="h-10"
+              size="sm"
             >
               Retry
             </Button>
           </div>
         ) : leads.length === 0 ? (
-          <div className="rounded-xl border border-border bg-muted/30 p-12 text-center">
-            <h3 className="text-lg font-semibold mb-2">No Leads Available</h3>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              {profile?.tenant_id
-                ? "You don't have any leads yet. Generate leads using the search tools above."
-                : "You don't have any leads yet. Generate leads using the search tools above."}
+          <div className="rounded-lg border border-border bg-muted/20 p-8 text-center">
+            <h3 className="text-base font-medium mb-1">No Leads Available</h3>
+            <p className="text-sm text-muted-foreground">
+              No leads found. Try adjusting your filters or add new leads.
             </p>
           </div>
         ) : (
