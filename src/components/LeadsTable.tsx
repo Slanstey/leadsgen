@@ -26,15 +26,18 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { FieldVisibilityConfig, defaultFieldVisibility } from "@/types/tenantPreferences";
 
+type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "followsOnLinkedin" | "createdAt" | "marketCapitalisation" | "companySizeInterval" | null;
+type SortDirection = "asc" | "desc" | null;
+
 interface LeadsTableProps {
   leads: Lead[];
   onStatusChange: (leadId: string, newStatus: LeadStatus) => void;
   onAddComment: (leadId: string, comment: string) => void;
   fieldVisibility?: FieldVisibilityConfig;
+  sortColumn?: SortColumn;
+  sortDirection?: SortDirection;
+  onSort?: (column: SortColumn) => void;
 }
-
-type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "followsOnLinkedin" | "createdAt" | null;
-type SortDirection = "asc" | "desc" | null;
 
 const statusConfig: Record<
   LeadStatus,
@@ -81,15 +84,13 @@ const statusConfig: Record<
   },
 };
 
-export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibility }: LeadsTableProps) {
+export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibility, sortColumn = null, sortDirection = null, onSort }: LeadsTableProps) {
   const { profile } = useAuth();
   const [commentingLead, setCommentingLead] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [sortColumn, setSortColumn] = useState<SortColumn>(null);
-  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
 
   const visibility = fieldVisibility || defaultFieldVisibility;
   const visibleColumnCount = Object.values(visibility).filter(Boolean).length || 1;
@@ -138,78 +139,10 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
   };
 
   const handleSort = (column: SortColumn) => {
-    if (sortColumn === column) {
-      // Cycle through: unsorted -> asc -> desc -> unsorted
-      if (sortDirection === null) {
-        setSortDirection("asc");
-      } else if (sortDirection === "asc") {
-        setSortDirection("desc");
-      } else {
-        // desc -> unsorted
-        setSortColumn(null);
-        setSortDirection(null);
-      }
-    } else {
-      // Set new column and start with ascending
-      setSortColumn(column);
-      setSortDirection("asc");
+    if (onSort) {
+      onSort(column);
     }
   };
-
-  const sortedLeads = [...leads].sort((a, b) => {
-    // If no sort column, default to newest first (createdAt desc)
-    if (!sortColumn || sortDirection === null) {
-      return b.createdAt.getTime() - a.createdAt.getTime();
-    }
-
-    let aValue: any;
-    let bValue: any;
-
-    switch (sortColumn) {
-      case "companyName":
-        aValue = a.companyName.toLowerCase();
-        bValue = b.companyName.toLowerCase();
-        break;
-      case "contactPerson":
-        aValue = a.contactPerson.toLowerCase();
-        bValue = b.contactPerson.toLowerCase();
-        break;
-      case "contactEmail":
-        aValue = (a.contactEmail || "").toLowerCase();
-        bValue = (b.contactEmail || "").toLowerCase();
-        break;
-      case "role":
-        aValue = a.role.toLowerCase();
-        bValue = b.role.toLowerCase();
-        break;
-      case "tier":
-        aValue = a.tier;
-        bValue = b.tier;
-        break;
-      case "status":
-        aValue = a.status;
-        bValue = b.status;
-        break;
-      case "createdAt":
-        aValue = a.createdAt.getTime();
-        bValue = b.createdAt.getTime();
-        break;
-      case "followsOnLinkedin":
-        aValue = a.followsOnLinkedin ? 1 : 0;
-        bValue = b.followsOnLinkedin ? 1 : 0;
-        break;
-      default:
-        return 0;
-    }
-
-    if (aValue < bValue) {
-      return sortDirection === "asc" ? -1 : 1;
-    }
-    if (aValue > bValue) {
-      return sortDirection === "asc" ? 1 : -1;
-    }
-    return 0;
-  });
 
   const SortIcon = ({ column }: { column: SortColumn }) => {
     if (sortColumn !== column) {
@@ -330,13 +263,25 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                 </TableHead>
               )}
               {visibility.marketCapitalisation && (
-                <TableHead className="h-14 font-semibold text-sm w-[140px]">
-                  Market Cap
+                <TableHead
+                  className="h-14 font-semibold text-sm w-[140px] cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("marketCapitalisation")}
+                >
+                  <div className="flex items-center">
+                    Market Cap
+                    <SortIcon column="marketCapitalisation" />
+                  </div>
                 </TableHead>
               )}
               {visibility.companySizeInterval && (
-                <TableHead className="h-14 font-semibold text-sm w-[140px]">
-                  Company Size
+                <TableHead
+                  className="h-14 font-semibold text-sm w-[140px] cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("companySizeInterval")}
+                >
+                  <div className="flex items-center">
+                    Company Size
+                    <SortIcon column="companySizeInterval" />
+                  </div>
                 </TableHead>
               )}
               {visibility.commodityFields && (
@@ -359,7 +304,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedLeads.map((lead, index) => (
+            {leads.map((lead, index) => (
               <Fragment key={lead.id}>
                 <TableRow
                   className={`group border-b border-border/50 hover:bg-success/8 hover:border-success/40 transition-all duration-200 ${

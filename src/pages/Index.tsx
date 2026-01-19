@@ -30,6 +30,53 @@ import {
 } from "@/components/ui/pagination";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+// Helper function to parse market cap string to numeric value (in millions)
+const parseMarketCap = (marketCap: string | null | undefined): number | null => {
+  if (!marketCap || marketCap === "Unknown" || marketCap === "null" || marketCap.toLowerCase() === "null") {
+    return null;
+  }
+
+  // Extract number and unit (M or B)
+  const match = marketCap.match(/USD\s*([\d.]+)\s*([MB])/i);
+  if (!match) return null;
+
+  const value = parseFloat(match[1]);
+  const unit = match[2].toUpperCase();
+
+  // Convert to millions
+  if (unit === "B") {
+    return value * 1000;
+  }
+  return value;
+};
+
+// Helper function to check if market cap falls within a bracket
+const marketCapInBracket = (marketCap: string | null | undefined, bracket: string): boolean => {
+  if (bracket === "unknown") {
+    return !marketCap || marketCap === "Unknown" || marketCap === "null" || marketCap.toLowerCase() === "null";
+  }
+
+  const value = parseMarketCap(marketCap);
+  if (value === null) return false;
+
+  switch (bracket) {
+    case "under_100m":
+      return value < 100;
+    case "100m_500m":
+      return value >= 100 && value < 500;
+    case "500m_1b":
+      return value >= 500 && value < 1000;
+    case "1b_10b":
+      return value >= 1000 && value < 10000;
+    case "10b_50b":
+      return value >= 10000 && value < 50000;
+    case "over_50b":
+      return value >= 50000;
+    default:
+      return false;
+  }
+};
+
 const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -39,20 +86,37 @@ const Index = () => {
   const [companySearch, setCompanySearch] = useState("");
   const [warmConnectionSearch, setWarmConnectionSearch] = useState("");
   const [commoditySearch, setCommoditySearch] = useState("");
+  const [tierFilter, setTierFilter] = useState<LeadTier | "all">("all");
+  const [companySizeFilter, setCompanySizeFilter] = useState<string>("all");
+  const [marketCapFilter, setMarketCapFilter] = useState<string>("all");
   const [showIgnored, setShowIgnored] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [fieldVisibility, setFieldVisibility] = useState<FieldVisibilityConfig>(defaultFieldVisibility);
-  
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50); // Default 50 leads per page
   const [totalLeads, setTotalLeads] = useState(0);
   const [totalFilteredLeads, setTotalFilteredLeads] = useState(0);
-  
-  // Status counts for stats cards (total counts, not filtered by pagination)
+
+  // Sorting state
+  type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "followsOnLinkedin" | "createdAt" | "marketCapitalisation" | "companySizeInterval" | null;
+  type SortDirection = "asc" | "desc" | null;
+  const [sortColumn, setSortColumn] = useState<SortColumn>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
+  // Status counts for stats cards (total counts, not filtered)
   const [statusCounts, setStatusCounts] = useState({
+    contacted: 0,
+    discussingScope: 0,
+    proposalDelivered: 0,
+    total: 0,
+  });
+
+  // Filtered status counts (with filters applied)
+  const [filteredStatusCounts, setFilteredStatusCounts] = useState({
     contacted: 0,
     discussingScope: 0,
     proposalDelivered: 0,
@@ -127,6 +191,25 @@ const Index = () => {
         countQuery = countQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
       }
 
+      // Apply tier filter
+      if (tierFilter !== "all") {
+        countQuery = countQuery.eq("tier", tierFilter);
+      }
+
+      // Apply company size filter
+      if (companySizeFilter !== "all") {
+        countQuery = countQuery.eq("company_size_interval", companySizeFilter);
+      }
+
+      // Apply market cap filter
+      if (marketCapFilter !== "all") {
+        if (marketCapFilter === "unknown") {
+          countQuery = countQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+        } else {
+          countQuery = countQuery.ilike("market_capitalisation", `%${marketCapFilter}%`);
+        }
+      }
+
       const { count, error } = await countQuery;
 
       if (error) {
@@ -139,7 +222,7 @@ const Index = () => {
       console.error("Error fetching total count:", error);
       return 0;
     }
-  }, [profile?.tenant_id, statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored]);
+  }, [profile?.tenant_id, statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter]);
 
   // Fetch leads from database with pagination - matching AdminTenantDetail pattern
   const fetchLeads = useCallback(async () => {
@@ -202,9 +285,55 @@ const Index = () => {
         leadsQuery = leadsQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
       }
 
-      // Apply pagination and ordering
+      // Apply tier filter
+      if (tierFilter !== "all") {
+        leadsQuery = leadsQuery.eq("tier", tierFilter);
+      }
+
+      // Apply company size filter
+      if (companySizeFilter !== "all") {
+        leadsQuery = leadsQuery.eq("company_size_interval", companySizeFilter);
+      }
+
+      // Apply market cap filter
+      if (marketCapFilter !== "all") {
+        if (marketCapFilter === "unknown") {
+          leadsQuery = leadsQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+        }
+        // For bracket-based filtering, we'll filter client-side after fetching
+        // since Supabase doesn't easily support parsing string values for numeric comparison
+      }
+
+      // Apply sorting
+      if (sortColumn && sortDirection !== null) {
+        // Map frontend column names to database column names
+        const columnMap: Record<string, string> = {
+          companyName: "company_name",
+          contactPerson: "contact_person",
+          contactEmail: "contact_email",
+          role: "role",
+          tier: "tier",
+          status: "status",
+          followsOnLinkedin: "follows_on_linkedin",
+          createdAt: "created_at",
+          marketCapitalisation: "market_capitalisation",
+          companySizeInterval: "company_size_interval",
+        };
+
+        const dbColumn = columnMap[sortColumn];
+        if (dbColumn) {
+          leadsQuery = leadsQuery.order(dbColumn, { ascending: sortDirection === "asc" });
+        } else {
+          // Default to created_at desc if column mapping fails
+          leadsQuery = leadsQuery.order("created_at", { ascending: false });
+        }
+      } else {
+        // Default ordering: newest first
+        leadsQuery = leadsQuery.order("created_at", { ascending: false });
+      }
+
+      // Apply pagination
       const { data: leadsData, error: leadsError } = await leadsQuery
-        .order("created_at", { ascending: false })
         .range(from, to);
 
       if (leadsError) {
@@ -238,7 +367,7 @@ const Index = () => {
       // Fetch comments only for leads on current page (more efficient)
       const leadIds = (leadsData || []).map((lead: any) => lead.id);
       let commentsData: any[] = [];
-      
+
       if (leadIds.length > 0) {
         const { data: comments, error: commentsError } = await supabase
           .from(Tables.COMMENTS)
@@ -288,7 +417,15 @@ const Index = () => {
         };
       });
 
-      setLeads(leadsWithComments);
+      // Apply market cap bracket filtering client-side (if needed)
+      let filteredLeads = leadsWithComments;
+      if (marketCapFilter !== "all" && marketCapFilter !== "unknown") {
+        filteredLeads = leadsWithComments.filter((lead) => {
+          return marketCapInBracket(lead.marketCapitalisation, marketCapFilter);
+        });
+      }
+
+      setLeads(filteredLeads);
       setError(null);
     } catch (error) {
       console.error("Error fetching leads:", error);
@@ -298,7 +435,7 @@ const Index = () => {
     } finally {
       setLoading(false);
     }
-  }, [profile?.tenant_id, profile?.id, currentPage, pageSize, statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, fetchTotalCount]);
+  }, [profile?.tenant_id, profile?.id, currentPage, pageSize, statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter, sortColumn, sortDirection, fetchTotalCount]);
 
   // Fetch total count (all leads) for stats
   const fetchAllLeadsCount = useCallback(async () => {
@@ -321,8 +458,56 @@ const Index = () => {
     }
   }, [profile?.tenant_id]);
 
-  // Fetch status counts for stats cards (total counts, not paginated)
-  const fetchStatusCounts = useCallback(async () => {
+  // Fetch unfiltered status counts for stats cards (no filters applied)
+  const fetchUnfilteredStatusCounts = useCallback(async () => {
+    if (!profile?.tenant_id) return;
+
+    try {
+      // Fetch total count (unfiltered)
+      const { count: totalCount, error: totalError } = await supabase
+        .from(Tables.LEADS)
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", profile.tenant_id);
+
+      if (totalError) {
+        console.error("Total count fetch error:", totalError);
+        return;
+      }
+
+      // Fetch counts for each status (unfiltered) in parallel
+      const [contactedResult, discussingScopeResult, proposalDeliveredResult] = await Promise.all([
+        supabase
+          .from(Tables.LEADS)
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", profile.tenant_id)
+          .eq("status", "contacted"),
+        supabase
+          .from(Tables.LEADS)
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", profile.tenant_id)
+          .eq("status", "discussing_scope"),
+        supabase
+          .from(Tables.LEADS)
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", profile.tenant_id)
+          .eq("status", "proposal_delivered"),
+      ]);
+
+      const counts = {
+        contacted: contactedResult.count || 0,
+        discussingScope: discussingScopeResult.count || 0,
+        proposalDelivered: proposalDeliveredResult.count || 0,
+        total: totalCount || 0,
+      };
+
+      setStatusCounts(counts);
+    } catch (error) {
+      console.error("Error fetching unfiltered status counts:", error);
+    }
+  }, [profile?.tenant_id]);
+
+  // Fetch filtered status counts for stats cards (with filters applied)
+  const fetchFilteredStatusCounts = useCallback(async () => {
     if (!profile?.tenant_id) return;
 
     try {
@@ -352,6 +537,21 @@ const Index = () => {
         baseQuery = baseQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
       }
 
+      // Apply tier filter
+      if (tierFilter !== "all") {
+        baseQuery = baseQuery.eq("tier", tierFilter);
+      }
+
+      // Apply company size filter
+      if (companySizeFilter !== "all") {
+        baseQuery = baseQuery.eq("company_size_interval", companySizeFilter);
+      }
+
+      // Apply market cap filter (unknown only - brackets filtered client-side)
+      if (marketCapFilter !== "all" && marketCapFilter === "unknown") {
+        baseQuery = baseQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+      }
+
       // Fetch total count
       const { count: totalCount, error: totalError } = await baseQuery;
 
@@ -368,6 +568,11 @@ const Index = () => {
           .eq("tenant_id", profile.tenant_id)
           .eq("status", status);
 
+        // Apply ignored filter
+        if (!showIgnored) {
+          query = query.neq("status", "ignored");
+        }
+
         if (companySearch.trim()) {
           query = query.ilike("company_name", `${companySearch.trim()}%`);
         }
@@ -376,6 +581,21 @@ const Index = () => {
         }
         if (commoditySearch.trim()) {
           query = query.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+        }
+
+        // Apply tier filter
+        if (tierFilter !== "all") {
+          query = query.eq("tier", tierFilter);
+        }
+
+        // Apply company size filter
+        if (companySizeFilter !== "all") {
+          query = query.eq("company_size_interval", companySizeFilter);
+        }
+
+        // Apply market cap filter (unknown only)
+        if (marketCapFilter !== "all" && marketCapFilter === "unknown") {
+          query = query.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
         }
 
         return query;
@@ -395,19 +615,19 @@ const Index = () => {
         total: totalCount || 0,
       };
 
-      setStatusCounts(counts);
+      setFilteredStatusCounts(counts);
     } catch (error) {
-      console.error("Error fetching status counts:", error);
+      console.error("Error fetching filtered status counts:", error);
     }
-  }, [profile?.tenant_id, companySearch, warmConnectionSearch, commoditySearch, showIgnored]);
+  }, [profile?.tenant_id, companySearch, warmConnectionSearch, commoditySearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter]);
 
-  // Reset to page 1 when filters change and refetch status counts
+  // Reset to page 1 when filters or sort change and refetch filtered status counts
   useEffect(() => {
     setCurrentPage(1);
     if (profile?.tenant_id) {
-      fetchStatusCounts();
+      fetchFilteredStatusCounts();
     }
-  }, [statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, profile?.tenant_id, fetchStatusCounts]);
+  }, [statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, sortColumn, sortDirection, profile?.tenant_id, fetchFilteredStatusCounts]);
 
   useEffect(() => {
     // Fetch leads for user's tenant (all users have tenant_id now)
@@ -415,12 +635,13 @@ const Index = () => {
       fetchFieldVisibility();
       fetchLeads();
       fetchAllLeadsCount();
-      fetchStatusCounts();
+      fetchUnfilteredStatusCounts();
+      fetchFilteredStatusCounts();
     } else {
       setLeads([]);
       setLoading(false);
     }
-  }, [profile?.tenant_id, fetchFieldVisibility, fetchLeads, fetchAllLeadsCount, fetchStatusCounts]);
+  }, [profile?.tenant_id, fetchFieldVisibility, fetchLeads, fetchAllLeadsCount, fetchUnfilteredStatusCounts, fetchFilteredStatusCounts]);
 
   // Refetch when navigating back to this page
   useEffect(() => {
@@ -429,12 +650,13 @@ const Index = () => {
       fetchFieldVisibility();
       fetchLeads();
       fetchAllLeadsCount();
-      fetchStatusCounts();
+      fetchUnfilteredStatusCounts();
+      fetchFilteredStatusCounts();
     } else if (profile?.tenant_id === DEFAULT_TENANT_ID) {
       setLeads([]);
       setLoading(false);
     }
-  }, [location.pathname, profile?.tenant_id, fetchFieldVisibility, fetchLeads, fetchAllLeadsCount, fetchStatusCounts]);
+  }, [location.pathname, profile?.tenant_id, fetchFieldVisibility, fetchLeads, fetchAllLeadsCount, fetchUnfilteredStatusCounts, fetchFilteredStatusCounts]);
 
   const handleStatusChange = async (leadId: string, newStatus: LeadStatus) => {
     try {
@@ -453,7 +675,8 @@ const Index = () => {
         // Update total filtered count
         setTotalFilteredLeads((prev) => Math.max(0, prev - 1));
         // Refetch to update counts
-        fetchStatusCounts();
+        fetchUnfilteredStatusCounts();
+        fetchFilteredStatusCounts();
       } else {
         // Update local state
         setLeads((prevLeads) =>
@@ -464,13 +687,33 @@ const Index = () => {
           )
         );
         // Update status counts
-        fetchStatusCounts();
+        fetchUnfilteredStatusCounts();
+        fetchFilteredStatusCounts();
       }
 
       toast.success("Status updated successfully");
     } catch (error) {
       console.error("Error updating status:", error);
       toast.error("Failed to update status");
+    }
+  };
+
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      // Cycle through: unsorted -> asc -> desc -> unsorted
+      if (sortDirection === null) {
+        setSortDirection("asc");
+      } else if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else {
+        // desc -> unsorted
+        setSortColumn(null);
+        setSortDirection(null);
+      }
+    } else {
+      // Set new column and start with ascending
+      setSortColumn(column);
+      setSortDirection("asc");
     }
   };
 
@@ -532,6 +775,20 @@ const Index = () => {
   const filteredLeads = useMemo(() => {
     return leads || [];
   }, [leads]);
+
+  // Check if any filters are active
+  const hasActiveFilters = useMemo(() => {
+    return (
+      companySearch.trim() !== "" ||
+      warmConnectionSearch.trim() !== "" ||
+      commoditySearch.trim() !== "" ||
+      statusFilter !== "all" ||
+      tierFilter !== "all" ||
+      companySizeFilter !== "all" ||
+      marketCapFilter !== "all" ||
+      showIgnored === true
+    );
+  }, [companySearch, warmConnectionSearch, commoditySearch, statusFilter, tierFilter, companySizeFilter, marketCapFilter, showIgnored]);
 
   // Calculate pagination info
   const totalPages = Math.ceil(totalFilteredLeads / pageSize);
@@ -618,7 +875,14 @@ const Index = () => {
             <div className="flex items-center justify-between mb-2">
               <div className="text-sm font-medium text-muted-foreground">Total Leads</div>
             </div>
-            <div className="text-3xl lg:text-4xl font-bold tracking-tight">{statusCounts.total}</div>
+            <div className="text-3xl lg:text-4xl font-bold tracking-tight">
+              {statusCounts.total}
+              {hasActiveFilters && (
+                <span className="text-lg lg:text-xl text-muted-foreground font-normal ml-1">
+                  ({filteredStatusCounts.total} filtered)
+                </span>
+              )}
+            </div>
             <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
           <div className="group relative overflow-hidden rounded-xl bg-card p-6 shadow-soft border border-border/50 hover:shadow-soft-lg transition-all duration-200 hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '100ms' }}>
@@ -627,6 +891,11 @@ const Index = () => {
             </div>
             <div className="text-3xl lg:text-4xl font-bold tracking-tight text-sky-600">
               {statusCounts.contacted}
+              {hasActiveFilters && (
+                <span className="text-lg lg:text-xl text-muted-foreground font-normal ml-1">
+                  ({filteredStatusCounts.contacted} filtered)
+                </span>
+              )}
             </div>
             <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-sky-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
@@ -636,6 +905,11 @@ const Index = () => {
             </div>
             <div className="text-3xl lg:text-4xl font-bold tracking-tight text-info">
               {statusCounts.discussingScope}
+              {hasActiveFilters && (
+                <span className="text-lg lg:text-xl text-muted-foreground font-normal ml-1">
+                  ({filteredStatusCounts.discussingScope} filtered)
+                </span>
+              )}
             </div>
             <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-info/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
@@ -645,46 +919,55 @@ const Index = () => {
             </div>
             <div className="text-3xl lg:text-4xl font-bold tracking-tight text-success">
               {statusCounts.proposalDelivered}
+              {hasActiveFilters && (
+                <span className="text-lg lg:text-xl text-muted-foreground font-normal ml-1">
+                  ({filteredStatusCounts.proposalDelivered} filtered)
+                </span>
+              )}
             </div>
             <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-success/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
         </div>
 
         {/* Refined filters section */}
-        <div className="mb-8 space-y-4">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
+        <div className="mb-8 space-y-4 w-full">
+          {/* Search filters row */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center w-full">
+            <div className="relative flex-1 min-w-0">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <Input
                 placeholder="Search companies..."
                 value={companySearch}
                 onChange={(e) => setCompanySearch(e.target.value)}
-                className="pl-9 h-11 bg-background border-border/50 focus:border-primary/50 transition-colors"
+                className="pl-9 h-11 bg-background border-2 border-border focus:border-primary transition-colors"
               />
             </div>
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-0">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <Input
                 placeholder="Search warm connections..."
                 value={warmConnectionSearch}
                 onChange={(e) => setWarmConnectionSearch(e.target.value)}
-                className="pl-9 h-11 bg-background border-border/50 focus:border-primary/50 transition-colors"
+                className="pl-9 h-11 bg-background border-2 border-border focus:border-primary transition-colors"
               />
             </div>
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-0">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <Input
                 placeholder="Search commodities..."
                 value={commoditySearch}
                 onChange={(e) => setCommoditySearch(e.target.value)}
-                className="pl-9 h-11 bg-background border-border/50 focus:border-primary/50 transition-colors"
+                className="pl-9 h-11 bg-background border-2 border-border focus:border-primary transition-colors"
               />
             </div>
+          </div>
+          {/* Dropdown filters row */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center w-full flex-wrap">
             <Select
               value={statusFilter}
               onValueChange={(value) => setStatusFilter(value as LeadStatus | "all")}
             >
-              <SelectTrigger className="w-full sm:w-[200px] h-11 border-border/50">
+              <SelectTrigger className="flex-1 min-w-[160px] sm:min-w-[180px] h-11 border-2 border-border focus:border-primary transition-colors">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -696,40 +979,85 @@ const Index = () => {
                 <SelectItem value="ignored">Ignored</SelectItem>
               </SelectContent>
             </Select>
-            <Button
-              variant="outline"
-              onClick={() => setExportDialogOpen(true)}
-              className="w-full sm:w-auto h-11 border-border/50 hover:bg-muted/50"
+            <Select
+              value={tierFilter}
+              onValueChange={(value) => setTierFilter(value as LeadTier | "all")}
             >
-              <Download className="h-4 w-4 mr-2" />
-              Export
-            </Button>
-          </div>
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="showIgnored"
-              checked={showIgnored}
-              onCheckedChange={(checked) => {
-                setShowIgnored(checked === true);
-              }}
-              className="h-4 w-4"
-            />
-            <Label
-              htmlFor="showIgnored"
-              className="text-sm font-normal cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
+              <SelectTrigger className="flex-1 min-w-[140px] sm:min-w-[160px] h-11 border-2 border-border focus:border-primary transition-colors">
+                <SelectValue placeholder="Filter by tier" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Tiers</SelectItem>
+                <SelectItem value="1st">1st Degree</SelectItem>
+                <SelectItem value="2nd">2nd Degree</SelectItem>
+                <SelectItem value="3rd">3rd Degree</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={companySizeFilter}
+              onValueChange={(value) => setCompanySizeFilter(value)}
             >
-              Show ignored leads
-            </Label>
+              <SelectTrigger className="flex-1 min-w-[180px] sm:min-w-[200px] h-11 border-2 border-border focus:border-primary transition-colors">
+                <SelectValue placeholder="Filter by company size" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sizes</SelectItem>
+                <SelectItem value="<500">&lt;500 employees</SelectItem>
+                <SelectItem value="1000-5000">1,000-5,000 employees</SelectItem>
+                <SelectItem value="5000-10000">5,000-10,000 employees</SelectItem>
+                <SelectItem value="10000+">10,000+ employees</SelectItem>
+                <SelectItem value="Unknown">Unknown</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={marketCapFilter}
+              onValueChange={(value) => setMarketCapFilter(value)}
+            >
+              <SelectTrigger className="flex-1 min-w-[180px] sm:min-w-[200px] h-11 border-2 border-border focus:border-primary transition-colors">
+                <SelectValue placeholder="Filter by market cap" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Market Caps</SelectItem>
+                <SelectItem value="under_100m">Under $100M</SelectItem>
+                <SelectItem value="100m_500m">$100M - $500M</SelectItem>
+                <SelectItem value="500m_1b">$500M - $1B</SelectItem>
+                <SelectItem value="1b_10b">$1B - $10B</SelectItem>
+                <SelectItem value="10b_50b">$10B - $50B</SelectItem>
+                <SelectItem value="over_50b">Over $50B</SelectItem>
+                <SelectItem value="unknown">Unknown</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
         {/* Pagination Controls - At the top before the table */}
         {!loading && !error && leads.length > 0 && totalFilteredLeads > 0 && (
-          <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="text-sm text-muted-foreground">
-                Showing {startIndex} to {endIndex} of {totalFilteredLeads} leads
-              </div>
+          <div className="mb-6 flex flex-col sm:flex-row items-center justify-between w-full gap-2 sm:gap-5">
+            {/* Show ignored leads */}
+            <div className="flex items-center gap-2 whitespace-nowrap sm:mr-0">
+              <Checkbox
+                id="showIgnored"
+                checked={showIgnored}
+                onCheckedChange={(checked) => {
+                  setShowIgnored(checked === true);
+                }}
+                className="h-4 w-4"
+              />
+              <Label
+                htmlFor="showIgnored"
+                className="text-sm font-normal cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Show ignored leads
+              </Label>
+            </div>
+
+            {/* Showing X to X of Y leads */}
+            <div className="text-sm text-muted-foreground whitespace-nowrap sm:mx-0">
+              Showing {startIndex} to {endIndex} of {totalFilteredLeads} leads
+            </div>
+
+            {/* Number of leads per page */}
+            <div className="sm:mx-0">
               <Select
                 value={pageSize.toString()}
                 onValueChange={(value) => {
@@ -737,7 +1065,7 @@ const Index = () => {
                   setCurrentPage(1); // Reset to first page when changing page size
                 }}
               >
-                <SelectTrigger className="w-[140px] h-9">
+                <SelectTrigger className="w-[150px] h-9 px-2 border-2 border-border focus:border-primary transition-colors" >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -748,109 +1076,125 @@ const Index = () => {
                 </SelectContent>
               </Select>
             </div>
-            {totalPages > 1 && (
-              <Pagination>
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious
-                      onClick={(e) => {
-                        e.preventDefault();
-                        handlePageChange(currentPage - 1);
-                      }}
-                      className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                      href="#"
-                    />
-                  </PaginationItem>
-                  
-                  {/* First page */}
-                  {currentPage > 3 && (
-                    <>
-                      <PaginationItem>
-                        <PaginationLink
-                          onClick={(e) => {
-                            e.preventDefault();
-                            handlePageChange(1);
-                          }}
-                          className="cursor-pointer"
-                          href="#"
-                        >
-                          1
-                        </PaginationLink>
-                      </PaginationItem>
-                      {currentPage > 4 && (
+
+            {/* Pagination */}
+            <div className="sm:mx-0">
+              {totalPages > 1 && (
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handlePageChange(currentPage - 1);
+                        }}
+                        className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                        href="#"
+                      />
+                    </PaginationItem>
+
+                    {/* First page */}
+                    {currentPage > 3 && (
+                      <>
                         <PaginationItem>
-                          <PaginationEllipsis />
+                          <PaginationLink
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handlePageChange(1);
+                            }}
+                            className="cursor-pointer"
+                            href="#"
+                          >
+                            1
+                          </PaginationLink>
                         </PaginationItem>
-                      )}
-                    </>
-                  )}
-                  
-                  {/* Page numbers around current page */}
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNum: number;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
-                    }
-                    
-                    return (
-                      <PaginationItem key={pageNum}>
-                        <PaginationLink
-                          onClick={(e) => {
-                            e.preventDefault();
-                            handlePageChange(pageNum);
-                          }}
-                          isActive={currentPage === pageNum}
-                          className="cursor-pointer"
-                          href="#"
-                        >
-                          {pageNum}
-                        </PaginationLink>
-                      </PaginationItem>
-                    );
-                  })}
-                  
-                  {/* Last page */}
-                  {currentPage < totalPages - 2 && (
-                    <>
-                      {currentPage < totalPages - 3 && (
+                        {currentPage > 4 && (
+                          <PaginationItem>
+                            <PaginationEllipsis />
+                          </PaginationItem>
+                        )}
+                      </>
+                    )}
+
+                    {/* Page numbers around current page */}
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum: number;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+
+                      return (
+                        <PaginationItem key={pageNum}>
+                          <PaginationLink
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handlePageChange(pageNum);
+                            }}
+                            isActive={currentPage === pageNum}
+                            className="cursor-pointer"
+                            href="#"
+                          >
+                            {pageNum}
+                          </PaginationLink>
+                        </PaginationItem>
+                      );
+                    })}
+
+                    {/* Last page */}
+                    {currentPage < totalPages - 2 && (
+                      <>
+                        {currentPage < totalPages - 3 && (
+                          <PaginationItem>
+                            <PaginationEllipsis />
+                          </PaginationItem>
+                        )}
                         <PaginationItem>
-                          <PaginationEllipsis />
+                          <PaginationLink
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handlePageChange(totalPages);
+                            }}
+                            className="cursor-pointer"
+                            href="#"
+                          >
+                            {totalPages}
+                          </PaginationLink>
                         </PaginationItem>
-                      )}
-                      <PaginationItem>
-                        <PaginationLink
-                          onClick={(e) => {
-                            e.preventDefault();
-                            handlePageChange(totalPages);
-                          }}
-                          className="cursor-pointer"
-                          href="#"
-                        >
-                          {totalPages}
-                        </PaginationLink>
-                      </PaginationItem>
-                    </>
-                  )}
-                  
-                  <PaginationItem>
-                    <PaginationNext
-                      onClick={(e) => {
-                        e.preventDefault();
-                        handlePageChange(currentPage + 1);
-                      }}
-                      className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                      href="#"
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-            )}
+                      </>
+                    )}
+
+                    <PaginationItem>
+                      <PaginationNext
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handlePageChange(currentPage + 1);
+                        }}
+                        className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                        href="#"
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              )}
+            </div>
+
+            {/* Export button */}
+            <div className="sm:mx-0">
+              <Button
+                variant="outline"
+                onClick={() => setExportDialogOpen(true)}
+                className="h-9 border-2 border-border hover:bg-muted/50 hover:border-primary transition-colors whitespace-nowrap"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
+            </div>
           </div>
         )}
 
@@ -889,6 +1233,9 @@ const Index = () => {
               onStatusChange={handleStatusChange}
               onAddComment={handleAddComment}
               fieldVisibility={fieldVisibility}
+              sortColumn={sortColumn}
+              sortDirection={sortDirection}
+              onSort={handleSort}
             />
           </>
         )}
