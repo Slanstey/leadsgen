@@ -6,13 +6,13 @@ interface TierBadgeProps {
 }
 
 const tierConfig: Record<LeadTier, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className?: string }> = {
-  good: { label: "Good", variant: "default", className: "bg-green-500 hover:bg-green-600 text-white" },
-  medium: { label: "Medium", variant: "default", className: "bg-blue-500 hover:bg-blue-600 text-white" },
-  bad: { label: "Bad", variant: "default", className: "bg-yellow-500 hover:bg-yellow-600 text-white" },
+  "1st": { label: "1st Degree", variant: "default", className: "bg-green-500 hover:bg-green-600 text-white" },
+  "2nd": { label: "2nd Degree", variant: "default", className: "bg-blue-500 hover:bg-blue-600 text-white" },
+  "3rd": { label: "3rd Degree", variant: "default", className: "bg-yellow-500 hover:bg-yellow-600 text-white" },
 };
 
 export function TierBadge({ tier }: TierBadgeProps) {
-  const config = tierConfig[tier] || tierConfig.medium;
+  const config = tierConfig[tier] || tierConfig["2nd"];
   
   return (
     <Badge variant={config.variant} className={`font-medium ${config.className || ""}`}>

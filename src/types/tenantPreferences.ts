@@ -8,6 +8,10 @@ export type LeadFieldKey =
   | "status"
   | "warmConnections"
   | "isConnectedToTenant"
+  | "followsOnLinkedin"
+  | "marketCapitalisation"
+  | "companySizeInterval"
+  | "commodityFields"
   | "actions";
 
 export type FieldVisibilityConfig = Record<LeadFieldKey, boolean>;
@@ -22,6 +26,10 @@ export const defaultFieldVisibility: FieldVisibilityConfig = {
   status: true,
   warmConnections: true,
   isConnectedToTenant: true,
+  followsOnLinkedin: true,
+  marketCapitalisation: true,
+  companySizeInterval: true,
+  commodityFields: true,
   actions: true,
 };
 

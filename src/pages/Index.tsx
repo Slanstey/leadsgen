@@ -38,6 +38,7 @@ const Index = () => {
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
   const [companySearch, setCompanySearch] = useState("");
   const [warmConnectionSearch, setWarmConnectionSearch] = useState("");
+  const [commoditySearch, setCommoditySearch] = useState("");
   const [showIgnored, setShowIgnored] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,9 +53,9 @@ const Index = () => {
   
   // Status counts for stats cards (total counts, not filtered by pagination)
   const [statusCounts, setStatusCounts] = useState({
-    qualified: 0,
-    inProgress: 0,
-    closedWon: 0,
+    contacted: 0,
+    discussingScope: 0,
+    proposalDelivered: 0,
     total: 0,
   });
 
@@ -113,12 +114,17 @@ const Index = () => {
 
       // Apply company search filter (if provided)
       if (companySearch.trim()) {
-        countQuery = countQuery.ilike("company_name", `%${companySearch.trim()}%`);
+        countQuery = countQuery.ilike("company_name", `${companySearch.trim()}%`);
       }
 
       // Apply warm connection search filter (if provided)
       if (warmConnectionSearch.trim()) {
-        countQuery = countQuery.ilike("warm_connections", `%${warmConnectionSearch.trim()}%`);
+        countQuery = countQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
+      }
+
+      // Apply commodity search filter (if provided)
+      if (commoditySearch.trim()) {
+        countQuery = countQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
       }
 
       const { count, error } = await countQuery;
@@ -133,7 +139,7 @@ const Index = () => {
       console.error("Error fetching total count:", error);
       return 0;
     }
-  }, [profile?.tenant_id, statusFilter, companySearch, warmConnectionSearch, showIgnored]);
+  }, [profile?.tenant_id, statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored]);
 
   // Fetch leads from database with pagination - matching AdminTenantDetail pattern
   const fetchLeads = useCallback(async () => {
@@ -183,12 +189,17 @@ const Index = () => {
 
       // Apply company search filter (if provided)
       if (companySearch.trim()) {
-        leadsQuery = leadsQuery.ilike("company_name", `%${companySearch.trim()}%`);
+        leadsQuery = leadsQuery.ilike("company_name", `${companySearch.trim()}%`);
       }
 
       // Apply warm connection search filter (if provided)
       if (warmConnectionSearch.trim()) {
-        leadsQuery = leadsQuery.ilike("warm_connections", `%${warmConnectionSearch.trim()}%`);
+        leadsQuery = leadsQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
+      }
+
+      // Apply commodity search filter (if provided)
+      if (commoditySearch.trim()) {
+        leadsQuery = leadsQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
       }
 
       // Apply pagination and ordering
@@ -262,10 +273,14 @@ const Index = () => {
           contactEmail: lead.contact_email,
           role: lead.role,
           status: lead.status as LeadStatus,
-          tier: (lead.tier as LeadTier) || "medium",
+          tier: (lead.tier as LeadTier) || "2nd",
           tierReason: lead.tier_reason,
           warmConnections: lead.warm_connections,
           isConnectedToTenant: lead.is_connected_to_tenant,
+          followsOnLinkedin: lead.follows_on_linkedin,
+          marketCapitalisation: lead.market_capitalisation,
+          companySizeInterval: lead.company_size_interval,
+          commodityFields: lead.commodity_fields,
           comments: leadComments,
           createdAt: new Date(lead.created_at || ""),
           updatedAt: new Date(lead.updated_at || ""),
@@ -283,7 +298,7 @@ const Index = () => {
     } finally {
       setLoading(false);
     }
-  }, [profile?.tenant_id, profile?.id, currentPage, pageSize, statusFilter, companySearch, warmConnectionSearch, showIgnored, fetchTotalCount]);
+  }, [profile?.tenant_id, profile?.id, currentPage, pageSize, statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, fetchTotalCount]);
 
   // Fetch total count (all leads) for stats
   const fetchAllLeadsCount = useCallback(async () => {
@@ -324,12 +339,17 @@ const Index = () => {
 
       // Apply company search filter (if provided)
       if (companySearch.trim()) {
-        baseQuery = baseQuery.ilike("company_name", `%${companySearch.trim()}%`);
+        baseQuery = baseQuery.ilike("company_name", `${companySearch.trim()}%`);
       }
 
       // Apply warm connection search filter (if provided)
       if (warmConnectionSearch.trim()) {
-        baseQuery = baseQuery.ilike("warm_connections", `%${warmConnectionSearch.trim()}%`);
+        baseQuery = baseQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
+      }
+
+      // Apply commodity search filter (if provided)
+      if (commoditySearch.trim()) {
+        baseQuery = baseQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
       }
 
       // Fetch total count
@@ -349,26 +369,29 @@ const Index = () => {
           .eq("status", status);
 
         if (companySearch.trim()) {
-          query = query.ilike("company_name", `%${companySearch.trim()}%`);
+          query = query.ilike("company_name", `${companySearch.trim()}%`);
         }
         if (warmConnectionSearch.trim()) {
-          query = query.ilike("warm_connections", `%${warmConnectionSearch.trim()}%`);
+          query = query.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
+        }
+        if (commoditySearch.trim()) {
+          query = query.ilike("commodity_fields", `${commoditySearch.trim()}%`);
         }
 
         return query;
       };
 
       // Fetch counts for each status in parallel
-      const [qualifiedResult, inProgressResult, closedWonResult] = await Promise.all([
-        buildStatusQuery("qualified"),
-        buildStatusQuery("in_progress"),
-        buildStatusQuery("closed_won"),
+      const [contactedResult, discussingScopeResult, proposalDeliveredResult] = await Promise.all([
+        buildStatusQuery("contacted"),
+        buildStatusQuery("discussing_scope"),
+        buildStatusQuery("proposal_delivered"),
       ]);
 
       const counts = {
-        qualified: qualifiedResult.count || 0,
-        inProgress: inProgressResult.count || 0,
-        closedWon: closedWonResult.count || 0,
+        contacted: contactedResult.count || 0,
+        discussingScope: discussingScopeResult.count || 0,
+        proposalDelivered: proposalDeliveredResult.count || 0,
         total: totalCount || 0,
       };
 
@@ -376,7 +399,7 @@ const Index = () => {
     } catch (error) {
       console.error("Error fetching status counts:", error);
     }
-  }, [profile?.tenant_id, companySearch, warmConnectionSearch, showIgnored]);
+  }, [profile?.tenant_id, companySearch, warmConnectionSearch, commoditySearch, showIgnored]);
 
   // Reset to page 1 when filters change and refetch status counts
   useEffect(() => {
@@ -384,7 +407,7 @@ const Index = () => {
     if (profile?.tenant_id) {
       fetchStatusCounts();
     }
-  }, [statusFilter, companySearch, warmConnectionSearch, showIgnored, profile?.tenant_id, fetchStatusCounts]);
+  }, [statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, profile?.tenant_id, fetchStatusCounts]);
 
   useEffect(() => {
     // Fetch leads for user's tenant (all users have tenant_id now)
@@ -578,7 +601,7 @@ const Index = () => {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+      <main className="w-full px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
         {/* Page header with better typography and staggered animation */}
         <div className="mb-8 lg:mb-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <h2 className="text-3xl lg:text-4xl font-bold tracking-tight mb-2 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
@@ -600,30 +623,30 @@ const Index = () => {
           </div>
           <div className="group relative overflow-hidden rounded-xl bg-card p-6 shadow-soft border border-border/50 hover:shadow-soft-lg transition-all duration-200 hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '100ms' }}>
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-muted-foreground">Qualified</div>
+              <div className="text-sm font-medium text-muted-foreground">Contacted</div>
             </div>
-            <div className="text-3xl lg:text-4xl font-bold tracking-tight text-success">
-              {statusCounts.qualified}
+            <div className="text-3xl lg:text-4xl font-bold tracking-tight text-sky-600">
+              {statusCounts.contacted}
             </div>
-            <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-success/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+            <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-sky-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
           <div className="group relative overflow-hidden rounded-xl bg-card p-6 shadow-soft border border-border/50 hover:shadow-soft-lg transition-all duration-200 hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '200ms' }}>
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-muted-foreground">In Progress</div>
+              <div className="text-sm font-medium text-muted-foreground">Discussing Scope</div>
             </div>
             <div className="text-3xl lg:text-4xl font-bold tracking-tight text-info">
-              {statusCounts.inProgress}
+              {statusCounts.discussingScope}
             </div>
             <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-info/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
           <div className="group relative overflow-hidden rounded-xl bg-card p-6 shadow-soft border border-border/50 hover:shadow-soft-lg transition-all duration-200 hover:-translate-y-0.5 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '300ms' }}>
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-muted-foreground">Closed Won</div>
+              <div className="text-sm font-medium text-muted-foreground">Proposal Delivered</div>
             </div>
-            <div className="text-3xl lg:text-4xl font-bold tracking-tight text-accent">
-              {statusCounts.closedWon}
+            <div className="text-3xl lg:text-4xl font-bold tracking-tight text-success">
+              {statusCounts.proposalDelivered}
             </div>
-            <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-accent/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+            <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-success/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
         </div>
 
@@ -648,6 +671,15 @@ const Index = () => {
                 className="pl-9 h-11 bg-background border-border/50 focus:border-primary/50 transition-colors"
               />
             </div>
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search commodities..."
+                value={commoditySearch}
+                onChange={(e) => setCommoditySearch(e.target.value)}
+                className="pl-9 h-11 bg-background border-border/50 focus:border-primary/50 transition-colors"
+              />
+            </div>
             <Select
               value={statusFilter}
               onValueChange={(value) => setStatusFilter(value as LeadStatus | "all")}
@@ -659,10 +691,8 @@ const Index = () => {
                 <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="not_contacted">Not Contacted</SelectItem>
                 <SelectItem value="contacted">Contacted</SelectItem>
-                <SelectItem value="qualified">Qualified</SelectItem>
-                <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="closed_won">Closed Won</SelectItem>
-                <SelectItem value="closed_lost">Closed Lost</SelectItem>
+                <SelectItem value="discussing_scope">Discussing Scope</SelectItem>
+                <SelectItem value="proposal_delivered">Proposal Delivered</SelectItem>
                 <SelectItem value="ignored">Ignored</SelectItem>
               </SelectContent>
             </Select>

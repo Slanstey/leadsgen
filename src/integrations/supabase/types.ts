@@ -372,10 +372,9 @@ export type Database = {
       lead_status:
         | "not_contacted"
         | "contacted"
-        | "qualified"
-        | "in_progress"
-        | "closed_won"
-        | "closed_lost"
+        | "discussing_scope"
+        | "proposal_delivered"
+        | "ignored"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -506,10 +505,9 @@ export const Constants = {
       lead_status: [
         "not_contacted",
         "contacted",
-        "qualified",
-        "in_progress",
-        "closed_won",
-        "closed_lost",
+        "discussing_scope",
+        "proposal_delivered",
+        "ignored",
       ],
     },
   },

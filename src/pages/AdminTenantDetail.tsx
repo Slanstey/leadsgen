@@ -201,7 +201,7 @@ const AdminTenantDetail = () => {
           contactEmail: lead.contact_email,
           role: lead.role,
           status: lead.status as LeadStatus,
-          tier: (lead.tier as LeadTier) || "medium",
+          tier: (lead.tier as LeadTier) || "2nd",
           tierReason: lead.tier_reason,
           warmConnections: lead.warm_connections,
           isConnectedToTenant: lead.is_connected_to_tenant,
@@ -1061,6 +1061,7 @@ const AdminTenantDetail = () => {
                   />
                   <Label htmlFor="field-warm-connections">Warm connections</Label>
                 </div>
+                {/* LinkedIn Connected visibility toggle - disabled
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="field-is-connected-to-tenant"
@@ -1071,6 +1072,7 @@ const AdminTenantDetail = () => {
                   />
                   <Label htmlFor="field-is-connected-to-tenant">LinkedIn Connected</Label>
                 </div>
+                */}
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="field-actions"

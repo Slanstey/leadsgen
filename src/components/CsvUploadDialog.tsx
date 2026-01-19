@@ -58,11 +58,15 @@ interface ProcessedLeadRecord {
     contact_person: string;
     contact_email: string;
     role: string;
-    status: "not_contacted" | "contacted" | "qualified" | "in_progress" | "closed_won" | "closed_lost" | "ignored";
-    tier: "good" | "medium" | "bad";
+    status: "not_contacted" | "contacted" | "discussing_scope" | "proposal_delivered" | "ignored";
+    tier: "1st" | "2nd" | "3rd";
     tier_reason?: string;
     warm_connections?: string;
     is_connected_to_tenant?: boolean;
+    follows_on_linkedin?: boolean;
+    market_capitalisation?: string;
+    company_size_interval?: string;
+    commodity_fields?: string;
     created_at: string;
     updated_at: string;
   };
@@ -81,7 +85,6 @@ export function CsvUploadDialog({
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<{
-    // Lead fields
     company_name: string;
     contact_person: string;
     contact_email: string;
@@ -91,12 +94,11 @@ export function CsvUploadDialog({
     tier_reason: string;
     warm_connections: string;
     is_connected_to_tenant: string;
-    // Company fields
+    follows_on_linkedin: string;
+    market_capitalisation: string;
+    company_size_interval: string;
+    commodity_fields: string;
     company_location: string;
-    company_industry: string;
-    company_sub_industry: string;
-    company_annual_revenue: string;
-    company_description: string;
   }>({
     company_name: "",
     contact_person: "",
@@ -107,11 +109,11 @@ export function CsvUploadDialog({
     tier_reason: "",
     warm_connections: "",
     is_connected_to_tenant: "",
+    follows_on_linkedin: "",
+    market_capitalisation: "",
+    company_size_interval: "",
+    commodity_fields: "",
     company_location: "",
-    company_industry: "",
-    company_sub_industry: "",
-    company_annual_revenue: "",
-    company_description: "",
   });
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
@@ -125,20 +127,16 @@ export function CsvUploadDialog({
   ];
 
   const optionalLeadFields = [
+    { key: "company_location", label: "Location", required: false },
     { key: "contact_email", label: "Contact Email", required: false },
     { key: "status", label: "Status", required: false },
-    { key: "tier", label: "Tier (good/medium/bad)", required: false },
+    { key: "tier", label: "Tier (1st/2nd/3rd degree)", required: false },
     { key: "tier_reason", label: "Tier Reason", required: false },
     { key: "warm_connections", label: "Warm Connections", required: false },
-    { key: "is_connected_to_tenant", label: "Is Connected to Tenant (LinkedIn)", required: false },
-  ];
-
-  const optionalCompanyFields = [
-    { key: "company_location", label: "Company Location (City, Country)", required: true },
-    { key: "company_industry", label: "Company Industry", required: true },
-    { key: "company_sub_industry", label: "Company Sub-Industry", required: true },
-    { key: "company_annual_revenue", label: "Company Annual Revenue", required: true },
-    { key: "company_description", label: "Company Description", required: true },
+    { key: "follows_on_linkedin", label: "Follows You on LinkedIn", required: false },
+    { key: "market_capitalisation", label: "Market Capitalisation", required: false },
+    { key: "company_size_interval", label: "Company Size Interval", required: false },
+    { key: "commodity_fields", label: "Commodity Fields", required: false },
   ];
 
   // Function to parse CSV with custom delimiter.
@@ -262,11 +260,12 @@ export function CsvUploadDialog({
       tier: "",
       tier_reason: "",
       warm_connections: "",
+      is_connected_to_tenant: "",
+      follows_on_linkedin: "",
+      market_capitalisation: "",
+      company_size_interval: "",
+      commodity_fields: "",
       company_location: "",
-      company_industry: "",
-      company_sub_industry: "",
-      company_annual_revenue: "",
-      company_description: "",
     } as typeof columnMapping;
 
     csvHeaders.forEach((header) => {
@@ -324,45 +323,6 @@ export function CsvUploadDialog({
           lowerHeader.includes("country"))
       ) {
         autoMapping.company_location = header;
-      }
-
-      // Company industry mappings
-      if (
-        !autoMapping.company_industry &&
-        (lowerHeader.includes("industry") && !lowerHeader.includes("sub"))
-      ) {
-        autoMapping.company_industry = header;
-      }
-
-      // Company sub-industry mappings
-      if (
-        !autoMapping.company_sub_industry &&
-        (lowerHeader.includes("sub") && lowerHeader.includes("industry") ||
-          lowerHeader.includes("subindustry") ||
-          lowerHeader.includes("sector"))
-      ) {
-        autoMapping.company_sub_industry = header;
-      }
-
-      // Company annual revenue mappings
-      if (
-        !autoMapping.company_annual_revenue &&
-        (lowerHeader.includes("revenue") ||
-          lowerHeader.includes("annual revenue") ||
-          lowerHeader.includes("revenue range"))
-      ) {
-        autoMapping.company_annual_revenue = header;
-      }
-
-      // Company description mappings
-      if (
-        !autoMapping.company_description &&
-        (lowerHeader.includes("description") ||
-          lowerHeader.includes("about") ||
-          lowerHeader.includes("summary") ||
-          lowerHeader.includes("overview"))
-      ) {
-        autoMapping.company_description = header;
       }
     });
 
@@ -524,21 +484,18 @@ export function CsvUploadDialog({
         const statusRaw = columnMapping.status
           ? row[columnMapping.status]?.toString().trim().toLowerCase() || ""
           : "";
-        // Map status values to valid enum values (excluding "ignored" as it's not in Supabase enum)
-        let status: "not_contacted" | "contacted" | "qualified" | "in_progress" | "closed_won" | "closed_lost" = "not_contacted";
+        // Map status values to valid enum values
+        let status: "not_contacted" | "contacted" | "discussing_scope" | "proposal_delivered" | "ignored" = "not_contacted";
         if (statusRaw) {
-          const statusMap: Record<string, "not_contacted" | "contacted" | "qualified" | "in_progress" | "closed_won" | "closed_lost"> = {
+          const statusMap: Record<string, "not_contacted" | "contacted" | "discussing_scope" | "proposal_delivered" | "ignored"> = {
             "not_contacted": "not_contacted",
             "not contacted": "not_contacted",
             "contacted": "contacted",
-            "qualified": "qualified",
-            "in_progress": "in_progress",
-            "in progress": "in_progress",
-            "closed_won": "closed_won",
-            "closed won": "closed_won",
-            "closed_lost": "closed_lost",
-            "closed lost": "closed_lost",
-            "ignored": "not_contacted", // Map ignored to not_contacted since it's not in Supabase enum
+            "discussing_scope": "discussing_scope",
+            "discussing scope": "discussing_scope",
+            "proposal_delivered": "proposal_delivered",
+            "proposal delivered": "proposal_delivered",
+            "ignored": "ignored",
           };
           status = statusMap[statusRaw] || "not_contacted";
         }
@@ -546,18 +503,31 @@ export function CsvUploadDialog({
         const tierRaw = columnMapping.tier
           ? row[columnMapping.tier]?.toString().trim().toLowerCase() || ""
           : "";
-        // Map tier values to valid enum values
-        let tier: "good" | "medium" | "bad" = "medium";
+        // Map tier values to connection degree (1st/2nd/3rd)
+        let tier: "1st" | "2nd" | "3rd" = "2nd";
         if (tierRaw) {
-          const tierMap: Record<string, "good" | "medium" | "bad"> = {
-            "good": "good",
-            "medium": "medium",
-            "bad": "bad",
-            "1": "good",
-            "2": "medium",
-            "3": "bad",
+          const tierMap: Record<string, "1st" | "2nd" | "3rd"> = {
+            // Direct mappings
+            "1st": "1st",
+            "2nd": "2nd",
+            "3rd": "3rd",
+            // Numeric mappings
+            "1": "1st",
+            "2": "2nd",
+            "3": "3rd",
+            // Word mappings
+            "first": "1st",
+            "second": "2nd",
+            "third": "3rd",
+            // Tier prefix mappings
+            "tier 1": "1st",
+            "tier1": "1st",
+            "tier 2": "2nd",
+            "tier2": "2nd",
+            "tier 3": "3rd",
+            "tier3": "3rd",
           };
-          tier = tierMap[tierRaw] || "medium";
+          tier = tierMap[tierRaw] || "2nd";
         }
 
         const tierReason = columnMapping.tier_reason
@@ -574,6 +544,25 @@ export function CsvUploadDialog({
           const rawValue = row[columnMapping.is_connected_to_tenant]?.toString().trim().toLowerCase() || "";
           isConnectedToTenant = rawValue === "true" || rawValue === "1" || rawValue === "yes" || rawValue === "y";
         }
+
+        // Handle follows_on_linkedin - convert string to boolean
+        let followsOnLinkedin = false;
+        if (columnMapping.follows_on_linkedin) {
+          const rawValue = row[columnMapping.follows_on_linkedin]?.toString().trim().toLowerCase() || "";
+          followsOnLinkedin = rawValue === "true" || rawValue === "1" || rawValue === "yes" || rawValue === "y";
+        }
+
+        const marketCapitalisation = columnMapping.market_capitalisation
+          ? row[columnMapping.market_capitalisation]?.toString().trim() || ""
+          : "";
+
+        const companySizeInterval = columnMapping.company_size_interval
+          ? row[columnMapping.company_size_interval]?.toString().trim() || ""
+          : "";
+
+        const commodityFields = columnMapping.commodity_fields
+          ? row[columnMapping.commodity_fields]?.toString().trim() || ""
+          : "";
 
         // Extract company fields (use defaults if not mapped)
         // Extract city and country from location/address field
@@ -603,27 +592,15 @@ export function CsvUploadDialog({
         };
 
         const companyLocation = extractCityCountry(companyLocationRaw);
-        const companyIndustry = columnMapping.company_industry
-          ? row[columnMapping.company_industry]?.toString().trim() || "Unknown"
-          : "Unknown";
-        const companySubIndustry = columnMapping.company_sub_industry
-          ? row[columnMapping.company_sub_industry]?.toString().trim() || ""
-          : "";
-        const companyAnnualRevenue = columnMapping.company_annual_revenue
-          ? row[columnMapping.company_annual_revenue]?.toString().trim() || ""
-          : "";
-        const companyDescription = columnMapping.company_description
-          ? row[columnMapping.company_description]?.toString().trim() || ""
-          : "";
 
         return {
           company: {
             name: companyName,
             location: companyLocation,
-            industry: companyIndustry,
-            sub_industry: companySubIndustry,
-            annual_revenue: companyAnnualRevenue,
-            description: companyDescription,
+            industry: "Unknown",
+            sub_industry: "",
+            annual_revenue: "",
+            description: "",
           },
           lead: {
             tenant_id: tenantId,
@@ -635,7 +612,11 @@ export function CsvUploadDialog({
             tier,
             ...(tierReason && { tier_reason: tierReason }),
             ...(warmConnections && { warm_connections: warmConnections }),
-            is_connected_to_tenant: isConnectedToTenant, // Always include, defaults to false
+            is_connected_to_tenant: isConnectedToTenant,
+            follows_on_linkedin: followsOnLinkedin,
+            ...(marketCapitalisation && { market_capitalisation: marketCapitalisation }),
+            ...(companySizeInterval && { company_size_interval: companySizeInterval }),
+            ...(commodityFields && { commodity_fields: commodityFields }),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },
@@ -1164,11 +1145,11 @@ export function CsvUploadDialog({
         tier_reason: "",
         warm_connections: "",
         is_connected_to_tenant: "",
+        follows_on_linkedin: "",
+        market_capitalisation: "",
+        company_size_interval: "",
+        commodity_fields: "",
         company_location: "",
-        company_industry: "",
-        company_sub_industry: "",
-        company_annual_revenue: "",
-        company_description: "",
       });
       setStagedLeads([]);
       if (fileInputRef.current) {
@@ -1237,11 +1218,11 @@ export function CsvUploadDialog({
           tier_reason: "",
           warm_connections: "",
           is_connected_to_tenant: "",
+          follows_on_linkedin: "",
+          market_capitalisation: "",
+          company_size_interval: "",
+          commodity_fields: "",
           company_location: "",
-          company_industry: "",
-          company_sub_industry: "",
-          company_annual_revenue: "",
-          company_description: "",
         });
         setStagedLeads([]);
         if (fileInputRef.current) {
@@ -1295,7 +1276,7 @@ export function CsvUploadDialog({
             </div>
             <p className="text-xs text-muted-foreground">
               Supported formats: CSV, Excel (.xlsx, .xls). Required: Company Name, Contact Person, Role.
-              Optional: Email, Company Location (City, Country), Industry, Sub-Industry, Annual Revenue, Description.
+              Optional: Location, Email, Status, Tier, Warm Connections, Follows You on LinkedIn, Market Cap, Company Size, Commodities.
             </p>
           </div>
 
@@ -1432,48 +1413,6 @@ export function CsvUploadDialog({
                 </div>
               </div>
 
-              {/* Company Fields Section */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                  <Label className="text-sm font-medium">Company Fields (Optional but Recommended)</Label>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  These fields will be used to create or update company records. If not mapped, default values will be used.
-                </p>
-                <div className="grid gap-4">
-                  {optionalCompanyFields.map((field) => (
-                    <div key={field.key} className="space-y-2">
-                      <Label htmlFor={field.key}>
-                        {field.label}
-                        {field.required && <span className="text-muted-foreground text-xs ml-1">(will use default if not mapped)</span>}
-                      </Label>
-                      <Select
-                        value={columnMapping[field.key as keyof typeof columnMapping] || "__unmapped__"}
-                        onValueChange={(value) =>
-                          setColumnMapping({
-                            ...columnMapping,
-                            [field.key]: value === "__unmapped__" ? "" : value,
-                          })
-                        }
-                        disabled={isUploading}
-                      >
-                        <SelectTrigger id={field.key}>
-                          <SelectValue placeholder="Select column (optional)" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__unmapped__">-- Not mapped --</SelectItem>
-                          {headers.map((header) => (
-                            <SelectItem key={header} value={header}>
-                              {header}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
           )}
 
@@ -1493,7 +1432,7 @@ export function CsvUploadDialog({
                       <TableHead>Role</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Tier</TableHead>
-                      <TableHead>LinkedIn Connected</TableHead>
+                      {/* <TableHead>LinkedIn Connected</TableHead> */}
                       <TableHead className="w-[60px] text-right">Remove</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1510,9 +1449,11 @@ export function CsvUploadDialog({
                         <TableCell className="capitalize text-xs">
                           {item.lead.tier}
                         </TableCell>
+                        {/* LinkedIn Connected cell - disabled
                         <TableCell className="text-xs">
                           {item.lead.is_connected_to_tenant ? "Yes" : "No"}
                         </TableCell>
+                        */}
                         <TableCell className="text-right">
                           <Button
                             type="button"

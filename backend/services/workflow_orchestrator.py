@@ -144,7 +144,7 @@ class WorkflowOrchestrator:
                     "contact_email": lead.get("contact_email", ""),
                     "role": lead.get("role", ""),
                     "status": lead.get("status", "not_contacted"),
-                    "tier": lead.get("tier", "medium"),
+                    "tier": lead.get("tier", "2nd"),
                 }
                 # Add optional fields if present
                 if lead.get("tier_reason"):

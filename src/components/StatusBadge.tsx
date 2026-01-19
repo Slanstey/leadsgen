@@ -8,10 +8,8 @@ interface StatusBadgeProps {
 const statusConfig: Record<LeadStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   not_contacted: { label: "Not Contacted", variant: "secondary" },
   contacted: { label: "Contacted", variant: "outline" },
-  qualified: { label: "Qualified", variant: "default" },
-  in_progress: { label: "In Progress", variant: "default" },
-  closed_won: { label: "Closed Won", variant: "default" },
-  closed_lost: { label: "Closed Lost", variant: "destructive" },
+  discussing_scope: { label: "Discussing Scope", variant: "default" },
+  proposal_delivered: { label: "Proposal Delivered", variant: "default" },
   ignored: { label: "Ignored", variant: "secondary" }
 };
 
