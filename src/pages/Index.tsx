@@ -90,6 +90,10 @@ const Index = () => {
   const [companySizeFilter, setCompanySizeFilter] = useState<string>("all");
   const [marketCapFilter, setMarketCapFilter] = useState<string>("all");
   const [showIgnored, setShowIgnored] = useState(false);
+  const [feedbackFilter, setFeedbackFilter] = useState<"all" | "good" | "bad">("all");
+  const [commentFilter, setCommentFilter] = useState<"all" | "has_comments" | "recently_commented" | "edited_on" | "edited_after">("all");
+  const [editDateFilter, setEditDateFilter] = useState<string>("");
+  const [editDateFilterType, setEditDateFilterType] = useState<"on" | "after">("on");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
@@ -102,7 +106,7 @@ const Index = () => {
   const [totalFilteredLeads, setTotalFilteredLeads] = useState(0);
 
   // Sorting state
-  type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "followsOnLinkedin" | "createdAt" | "marketCapitalisation" | "companySizeInterval" | null;
+  type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "followsOnLinkedin" | "createdAt" | "marketCapitalisation" | "companySizeInterval" | "lastCommentDate" | null;
   type SortDirection = "asc" | "desc" | null;
   const [sortColumn, setSortColumn] = useState<SortColumn>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
@@ -158,6 +162,11 @@ const Index = () => {
           migratedVisibility.actionFeedback = actionsValue ?? true;
           migratedVisibility.actionComments = actionsValue ?? true;
           delete (migratedVisibility as any).actions;
+        }
+
+        // Set default for lastModified if it doesn't exist (defaults to true)
+        if (!("lastModified" in migratedVisibility)) {
+          migratedVisibility.lastModified = true;
         }
 
         setFieldVisibility({
@@ -229,6 +238,7 @@ const Index = () => {
         }
       }
 
+      // Note: Feedback and comment filters are applied client-side after fetching comments
       const { count, error } = await countQuery;
 
       if (error) {
@@ -263,10 +273,283 @@ const Index = () => {
         throw new Error("Supabase environment variables are not configured. Please check your .env file.");
       }
 
+      // Check if we need client-side filtering (feedback or comment filters)
+      const needsClientSideFiltering = feedbackFilter !== "all" || commentFilter !== "all" ||
+        (marketCapFilter !== "all" && marketCapFilter !== "unknown");
+
       // Fetch total count first (matching AdminTenantDetail pattern)
       const total = await fetchTotalCount();
-      setTotalFilteredLeads(total);
 
+      // If client-side filtering is needed, fetch all leads, filter, then paginate
+      if (needsClientSideFiltering) {
+        // Fetch ALL leads (no pagination) to apply client-side filters
+        let allLeadsQuery = supabase
+          .from(Tables.LEADS)
+          .select("*")
+          .eq("tenant_id", profile.tenant_id);
+
+        // Apply server-side filters
+        if (statusFilter === "ignored") {
+          allLeadsQuery = allLeadsQuery.eq("status", "ignored");
+        } else if (statusFilter !== "all") {
+          allLeadsQuery = allLeadsQuery.eq("status", statusFilter);
+          if (!showIgnored) {
+            allLeadsQuery = allLeadsQuery.neq("status", "ignored");
+          }
+        } else if (!showIgnored) {
+          allLeadsQuery = allLeadsQuery.neq("status", "ignored");
+        }
+
+        if (companySearch.trim()) {
+          allLeadsQuery = allLeadsQuery.ilike("company_name", `${companySearch.trim()}%`);
+        }
+        if (warmConnectionSearch.trim()) {
+          allLeadsQuery = allLeadsQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
+        }
+        if (commoditySearch.trim()) {
+          allLeadsQuery = allLeadsQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+        }
+        if (tierFilter !== "all") {
+          allLeadsQuery = allLeadsQuery.eq("tier", tierFilter);
+        }
+        if (companySizeFilter !== "all") {
+          allLeadsQuery = allLeadsQuery.eq("company_size_interval", companySizeFilter);
+        }
+        if (marketCapFilter !== "all" && marketCapFilter === "unknown") {
+          allLeadsQuery = allLeadsQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+        }
+
+        // Apply sorting
+        if (sortColumn && sortDirection !== null) {
+          const columnMap: Record<string, string> = {
+            companyName: "company_name",
+            contactPerson: "contact_person",
+            contactEmail: "contact_email",
+            role: "role",
+            tier: "tier",
+            status: "status",
+            followsOnLinkedin: "follows_on_linkedin",
+            createdAt: "created_at",
+            marketCapitalisation: "market_capitalisation",
+            companySizeInterval: "company_size_interval",
+          };
+          const dbColumn = columnMap[sortColumn];
+          if (dbColumn) {
+            allLeadsQuery = allLeadsQuery.order(dbColumn, { ascending: sortDirection === "asc" });
+          } else {
+            allLeadsQuery = allLeadsQuery.order("created_at", { ascending: false });
+          }
+        } else {
+          allLeadsQuery = allLeadsQuery.order("created_at", { ascending: false });
+        }
+
+        const { data: allLeadsData, error: allLeadsError } = await allLeadsQuery;
+
+        if (allLeadsError) {
+          console.error("Leads fetch error:", allLeadsError);
+          throw new Error(`Failed to fetch leads: ${allLeadsError.message}`);
+        }
+
+        // Fetch all comments for these leads
+        const allLeadIds = (allLeadsData || []).map((lead: any) => lead.id);
+        let allCommentsData: any[] = [];
+
+        if (allLeadIds.length > 0) {
+          const { data: comments, error: commentsError } = await supabase
+            .from(Tables.COMMENTS)
+            .select("*")
+            .eq("tenant_id", profile.tenant_id)
+            .in("lead_id", allLeadIds)
+            .order("created_at", { ascending: true });
+
+          if (!commentsError && comments) {
+            allCommentsData = comments || [];
+          }
+        }
+
+        // Fetch companies for all leads
+        const uniqueCompanyNames = [...new Set((allLeadsData || []).map((lead: any) => lead.company_name))];
+        const companiesMap = new Map<string, { industry?: string; location?: string; annualRevenue?: string; description?: string }>();
+
+        if (uniqueCompanyNames.length > 0) {
+          const { data: companiesData, error: companiesError } = await supabase
+            .from(Tables.COMPANIES)
+            .select("name, industry, location, annual_revenue, description")
+            .in("name", uniqueCompanyNames)
+            .eq("tenant_id", profile.tenant_id);
+
+          if (!companiesError && companiesData) {
+            companiesData.forEach((company: any) => {
+              companiesMap.set(company.name, {
+                industry: company.industry,
+                location: company.location,
+                annualRevenue: company.annual_revenue,
+                description: company.description,
+              });
+            });
+          }
+        }
+
+        // Combine leads with comments and company data
+        const allLeadsWithComments: Lead[] = (allLeadsData || []).map((lead: any) => {
+          const leadComments: Comment[] = allCommentsData
+            .filter((comment) => comment.lead_id === lead.id)
+            .map((comment) => ({
+              id: comment.id,
+              text: comment.text,
+              author: comment.author,
+              createdAt: new Date(comment.created_at || ""),
+            }));
+
+          return {
+            id: lead.id,
+            companyName: lead.company_name,
+            contactPerson: lead.contact_person,
+            contactEmail: lead.contact_email,
+            role: lead.role,
+            status: lead.status as LeadStatus,
+            tier: (lead.tier as LeadTier) || "2nd",
+            tierReason: lead.tier_reason,
+            warmConnections: lead.warm_connections,
+            isConnectedToTenant: lead.is_connected_to_tenant,
+            followsOnLinkedin: lead.follows_on_linkedin,
+            marketCapitalisation: lead.market_capitalisation,
+            companySizeInterval: lead.company_size_interval,
+            commodityFields: lead.commodity_fields,
+            comments: leadComments,
+            createdAt: new Date(lead.created_at || ""),
+            updatedAt: new Date(lead.updated_at || ""),
+            company: companiesMap.get(lead.company_name) || undefined,
+          };
+        });
+
+        // Apply client-side filters
+        let filteredLeads = allLeadsWithComments;
+
+        // Apply market cap bracket filtering
+        if (marketCapFilter !== "all" && marketCapFilter !== "unknown") {
+          filteredLeads = filteredLeads.filter((lead) => {
+            return marketCapInBracket(lead.marketCapitalisation, marketCapFilter);
+          });
+        }
+
+        // Apply feedback filter
+        if (feedbackFilter !== "all") {
+          filteredLeads = filteredLeads.filter((lead) => {
+            const hasFeedback = lead.comments.some((comment) => {
+              const text = comment.text.toLowerCase();
+              return text.includes("marked as") && (
+                (feedbackFilter === "good" && text.includes("good lead")) ||
+                (feedbackFilter === "bad" && text.includes("bad lead"))
+              );
+            });
+            return hasFeedback;
+          });
+        }
+
+        // Apply comment filter
+        if (commentFilter !== "all") {
+          filteredLeads = filteredLeads.filter((lead) => {
+            if (commentFilter === "has_comments") {
+              return lead.comments.length > 0;
+            } else if (commentFilter === "recently_commented") {
+              const now = new Date();
+              const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+              return lead.comments.some((comment) => comment.createdAt >= sevenDaysAgo);
+            } else if (commentFilter === "edited_on" && editDateFilter) {
+              const filterDate = new Date(editDateFilter);
+              filterDate.setHours(0, 0, 0, 0);
+              const nextDay = new Date(filterDate);
+              nextDay.setDate(nextDay.getDate() + 1);
+              const leadDate = new Date(lead.updatedAt);
+              leadDate.setHours(0, 0, 0, 0);
+              return leadDate >= filterDate && leadDate < nextDay;
+            } else if (commentFilter === "edited_after" && editDateFilter) {
+              const filterDate = new Date(editDateFilter);
+              filterDate.setHours(0, 0, 0, 0);
+              return lead.updatedAt >= filterDate;
+            }
+            return true;
+          });
+        }
+
+        // Apply client-side sorting (including lastCommentDate)
+        if (sortColumn && sortDirection !== null) {
+          filteredLeads.sort((a, b) => {
+            let aValue: any;
+            let bValue: any;
+
+            if (sortColumn === "lastCommentDate") {
+              // Get the most recent comment date for each lead
+              const getLastCommentDate = (lead: Lead): Date | null => {
+                if (lead.comments.length === 0) return null;
+                return new Date(Math.max(...lead.comments.map(c => c.createdAt.getTime())));
+              };
+              aValue = getLastCommentDate(a);
+              bValue = getLastCommentDate(b);
+              // Handle null values (leads with no comments)
+              if (aValue === null && bValue === null) return 0;
+              if (aValue === null) return 1; // No comments go to end
+              if (bValue === null) return -1; // No comments go to end
+            } else {
+              // Use existing sorting logic for other columns
+              const columnMap: Record<string, keyof Lead> = {
+                companyName: "companyName",
+                contactPerson: "contactPerson",
+                contactEmail: "contactEmail",
+                role: "role",
+                tier: "tier",
+                status: "status",
+                followsOnLinkedin: "followsOnLinkedin",
+                createdAt: "createdAt",
+                marketCapitalisation: "marketCapitalisation",
+                companySizeInterval: "companySizeInterval",
+              };
+              const leadKey = columnMap[sortColumn];
+              if (leadKey) {
+                aValue = a[leadKey];
+                bValue = b[leadKey];
+              }
+            }
+
+            // Compare values
+            if (aValue === bValue) return 0;
+            if (aValue === null || aValue === undefined) return 1;
+            if (bValue === null || bValue === undefined) return -1;
+
+            if (aValue instanceof Date && bValue instanceof Date) {
+              return sortDirection === "asc"
+                ? aValue.getTime() - bValue.getTime()
+                : bValue.getTime() - aValue.getTime();
+            }
+
+            if (typeof aValue === "string" && typeof bValue === "string") {
+              return sortDirection === "asc"
+                ? aValue.localeCompare(bValue)
+                : bValue.localeCompare(aValue);
+            }
+
+            if (typeof aValue === "number" && typeof bValue === "number") {
+              return sortDirection === "asc" ? aValue - bValue : bValue - aValue;
+            }
+
+            return 0;
+          });
+        }
+
+        // Apply client-side pagination
+        const from = (currentPage - 1) * pageSize;
+        const to = from + pageSize;
+        const paginatedLeads = filteredLeads.slice(from, to);
+
+        // Update total filtered count
+        setTotalFilteredLeads(filteredLeads.length);
+        setLeads(paginatedLeads);
+        setError(null);
+        return;
+      }
+
+      // Normal server-side pagination (no client-side filters)
       // Calculate pagination
       const from = (currentPage - 1) * pageSize;
       const to = from + pageSize - 1;
@@ -323,8 +606,8 @@ const Index = () => {
         // since Supabase doesn't easily support parsing string values for numeric comparison
       }
 
-      // Apply sorting
-      if (sortColumn && sortDirection !== null) {
+      // Apply sorting (skip lastCommentDate as it needs client-side sorting)
+      if (sortColumn && sortDirection !== null && sortColumn !== "lastCommentDate") {
         // Map frontend column names to database column names
         const columnMap: Record<string, string> = {
           companyName: "company_name",
@@ -439,11 +722,74 @@ const Index = () => {
       // Apply market cap bracket filtering client-side (if needed)
       let filteredLeads = leadsWithComments;
       if (marketCapFilter !== "all" && marketCapFilter !== "unknown") {
-        filteredLeads = leadsWithComments.filter((lead) => {
+        filteredLeads = filteredLeads.filter((lead) => {
           return marketCapInBracket(lead.marketCapitalisation, marketCapFilter);
         });
       }
 
+      // Apply feedback filter (good/bad leads based on comments)
+      if (feedbackFilter !== "all") {
+        filteredLeads = filteredLeads.filter((lead) => {
+          const hasFeedback = lead.comments.some((comment) => {
+            const text = comment.text.toLowerCase();
+            return text.includes("marked as") && (
+              (feedbackFilter === "good" && text.includes("good lead")) ||
+              (feedbackFilter === "bad" && text.includes("bad lead"))
+            );
+          });
+          return hasFeedback;
+        });
+      }
+
+      // Apply comment filter
+      if (commentFilter !== "all") {
+        filteredLeads = filteredLeads.filter((lead) => {
+          if (commentFilter === "has_comments") {
+            return lead.comments.length > 0;
+          } else if (commentFilter === "recently_commented") {
+            const now = new Date();
+            const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            return lead.comments.some((comment) => comment.createdAt >= sevenDaysAgo);
+          } else if (commentFilter === "edited_on" && editDateFilter) {
+            const filterDate = new Date(editDateFilter);
+            filterDate.setHours(0, 0, 0, 0);
+            const nextDay = new Date(filterDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            const leadDate = new Date(lead.updatedAt);
+            leadDate.setHours(0, 0, 0, 0);
+            return leadDate >= filterDate && leadDate < nextDay;
+          } else if (commentFilter === "edited_after" && editDateFilter) {
+            const filterDate = new Date(editDateFilter);
+            filterDate.setHours(0, 0, 0, 0);
+            return lead.updatedAt >= filterDate;
+          }
+          return true;
+        });
+      }
+
+      // Apply client-side sorting for lastCommentDate (if needed)
+      if (sortColumn === "lastCommentDate" && sortDirection !== null) {
+        filteredLeads.sort((a, b) => {
+          // Get the most recent comment date for each lead
+          const getLastCommentDate = (lead: Lead): Date | null => {
+            if (lead.comments.length === 0) return null;
+            return new Date(Math.max(...lead.comments.map(c => c.createdAt.getTime())));
+          };
+          const aValue = getLastCommentDate(a);
+          const bValue = getLastCommentDate(b);
+          // Handle null values (leads with no comments)
+          if (aValue === null && bValue === null) return 0;
+          if (aValue === null) return 1; // No comments go to end
+          if (bValue === null) return -1; // No comments go to end
+
+          return sortDirection === "asc"
+            ? aValue.getTime() - bValue.getTime()
+            : bValue.getTime() - aValue.getTime();
+        });
+      }
+
+      // Update total filtered count
+      setTotalFilteredLeads(total);
       setLeads(filteredLeads);
       setError(null);
     } catch (error) {
@@ -454,7 +800,7 @@ const Index = () => {
     } finally {
       setLoading(false);
     }
-  }, [profile?.tenant_id, profile?.id, currentPage, pageSize, statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter, sortColumn, sortDirection, fetchTotalCount]);
+  }, [profile?.tenant_id, profile?.id, currentPage, pageSize, statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter, feedbackFilter, commentFilter, editDateFilter, editDateFilterType, sortColumn, sortDirection, fetchTotalCount]);
 
   // Fetch total count (all leads) for stats
   const fetchAllLeadsCount = useCallback(async () => {
@@ -530,115 +876,240 @@ const Index = () => {
     if (!profile?.tenant_id) return;
 
     try {
-      // Build base query with filters (excluding pagination)
-      let baseQuery = supabase
-        .from(Tables.LEADS)
-        .select("id", { count: "exact", head: true })
-        .eq("tenant_id", profile.tenant_id);
+      // If feedback or comment filters are active, we need to fetch all leads with comments
+      // to apply client-side filters and get accurate counts
+      const needsClientSideFiltering = feedbackFilter !== "all" || commentFilter !== "all";
 
-      // Apply ignored filter - exclude ignored items unless showIgnored is true
-      if (!showIgnored) {
-        baseQuery = baseQuery.neq("status", "ignored");
-      }
-
-      // Apply company search filter (if provided)
-      if (companySearch.trim()) {
-        baseQuery = baseQuery.ilike("company_name", `${companySearch.trim()}%`);
-      }
-
-      // Apply warm connection search filter (if provided)
-      if (warmConnectionSearch.trim()) {
-        baseQuery = baseQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
-      }
-
-      // Apply commodity search filter (if provided)
-      if (commoditySearch.trim()) {
-        baseQuery = baseQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
-      }
-
-      // Apply tier filter
-      if (tierFilter !== "all") {
-        baseQuery = baseQuery.eq("tier", tierFilter);
-      }
-
-      // Apply company size filter
-      if (companySizeFilter !== "all") {
-        baseQuery = baseQuery.eq("company_size_interval", companySizeFilter);
-      }
-
-      // Apply market cap filter (unknown only - brackets filtered client-side)
-      if (marketCapFilter !== "all" && marketCapFilter === "unknown") {
-        baseQuery = baseQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
-      }
-
-      // Fetch total count
-      const { count: totalCount, error: totalError } = await baseQuery;
-
-      if (totalError) {
-        console.error("Total count fetch error:", totalError);
-        return;
-      }
-
-      // Fetch counts for each status
-      const buildStatusQuery = (status: string) => {
-        let query = supabase
+      if (needsClientSideFiltering) {
+        // Fetch all leads with comments to apply client-side filters
+        let allLeadsQuery = supabase
           .from(Tables.LEADS)
-          .select("id", { count: "exact", head: true })
-          .eq("tenant_id", profile.tenant_id)
-          .eq("status", status);
+          .select("*")
+          .eq("tenant_id", profile.tenant_id);
 
-        // Apply ignored filter
+        // Apply server-side filters
         if (!showIgnored) {
-          query = query.neq("status", "ignored");
+          allLeadsQuery = allLeadsQuery.neq("status", "ignored");
         }
-
         if (companySearch.trim()) {
-          query = query.ilike("company_name", `${companySearch.trim()}%`);
+          allLeadsQuery = allLeadsQuery.ilike("company_name", `${companySearch.trim()}%`);
         }
         if (warmConnectionSearch.trim()) {
-          query = query.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
+          allLeadsQuery = allLeadsQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
         }
         if (commoditySearch.trim()) {
-          query = query.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+          allLeadsQuery = allLeadsQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
         }
-
-        // Apply tier filter
         if (tierFilter !== "all") {
-          query = query.eq("tier", tierFilter);
+          allLeadsQuery = allLeadsQuery.eq("tier", tierFilter);
         }
-
-        // Apply company size filter
         if (companySizeFilter !== "all") {
-          query = query.eq("company_size_interval", companySizeFilter);
+          allLeadsQuery = allLeadsQuery.eq("company_size_interval", companySizeFilter);
         }
-
-        // Apply market cap filter (unknown only)
         if (marketCapFilter !== "all" && marketCapFilter === "unknown") {
-          query = query.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+          allLeadsQuery = allLeadsQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
         }
 
-        return query;
-      };
+        const { data: allLeadsData, error: allLeadsError } = await allLeadsQuery;
 
-      // Fetch counts for each status in parallel
-      const [contactedResult, discussingScopeResult, proposalDeliveredResult] = await Promise.all([
-        buildStatusQuery("contacted"),
-        buildStatusQuery("discussing_scope"),
-        buildStatusQuery("proposal_delivered"),
-      ]);
+        if (allLeadsError) {
+          console.error("Error fetching all leads for filtering:", allLeadsError);
+          return;
+        }
 
-      const counts = {
-        contacted: contactedResult.count || 0,
-        discussingScope: discussingScopeResult.count || 0,
-        proposalDelivered: proposalDeliveredResult.count || 0,
-        total: totalCount || 0,
-      };
+        // Fetch all comments for these leads
+        const leadIds = (allLeadsData || []).map((lead: any) => lead.id);
+        let commentsData: any[] = [];
 
-      setFilteredStatusCounts(counts);
+        if (leadIds.length > 0) {
+          const { data: comments, error: commentsError } = await supabase
+            .from(Tables.COMMENTS)
+            .select("*")
+            .eq("tenant_id", profile.tenant_id)
+            .in("lead_id", leadIds)
+            .order("created_at", { ascending: true });
+
+          if (!commentsError && comments) {
+            commentsData = comments || [];
+          }
+        }
+
+        // Combine leads with comments
+        const leadsWithComments: Lead[] = (allLeadsData || []).map((lead: any) => {
+          const leadComments: Comment[] = commentsData
+            .filter((comment) => comment.lead_id === lead.id)
+            .map((comment) => ({
+              id: comment.id,
+              text: comment.text,
+              author: comment.author,
+              createdAt: new Date(comment.created_at || ""),
+            }));
+
+          return {
+            id: lead.id,
+            companyName: lead.company_name,
+            contactPerson: lead.contact_person,
+            contactEmail: lead.contact_email,
+            role: lead.role,
+            status: lead.status as LeadStatus,
+            tier: (lead.tier as LeadTier) || "2nd",
+            tierReason: lead.tier_reason,
+            warmConnections: lead.warm_connections,
+            isConnectedToTenant: lead.is_connected_to_tenant,
+            followsOnLinkedin: lead.follows_on_linkedin,
+            marketCapitalisation: lead.market_capitalisation,
+            companySizeInterval: lead.company_size_interval,
+            commodityFields: lead.commodity_fields,
+            comments: leadComments,
+            createdAt: new Date(lead.created_at || ""),
+            updatedAt: new Date(lead.updated_at || ""),
+          };
+        });
+
+        // Apply market cap bracket filtering
+        let filteredLeads = leadsWithComments;
+        if (marketCapFilter !== "all" && marketCapFilter !== "unknown") {
+          filteredLeads = filteredLeads.filter((lead) => {
+            return marketCapInBracket(lead.marketCapitalisation, marketCapFilter);
+          });
+        }
+
+        // Apply feedback filter
+        if (feedbackFilter !== "all") {
+          filteredLeads = filteredLeads.filter((lead) => {
+            const hasFeedback = lead.comments.some((comment) => {
+              const text = comment.text.toLowerCase();
+              return text.includes("marked as") && (
+                (feedbackFilter === "good" && text.includes("good lead")) ||
+                (feedbackFilter === "bad" && text.includes("bad lead"))
+              );
+            });
+            return hasFeedback;
+          });
+        }
+
+        // Apply comment filter
+        if (commentFilter !== "all") {
+          filteredLeads = filteredLeads.filter((lead) => {
+            if (commentFilter === "has_comments") {
+              return lead.comments.length > 0;
+            } else if (commentFilter === "recently_commented") {
+              const now = new Date();
+              const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+              return lead.comments.some((comment) => comment.createdAt >= sevenDaysAgo);
+            } else if (commentFilter === "edited_on" && editDateFilter) {
+              const filterDate = new Date(editDateFilter);
+              filterDate.setHours(0, 0, 0, 0);
+              const nextDay = new Date(filterDate);
+              nextDay.setDate(nextDay.getDate() + 1);
+              const leadDate = new Date(lead.updatedAt);
+              leadDate.setHours(0, 0, 0, 0);
+              return leadDate >= filterDate && leadDate < nextDay;
+            } else if (commentFilter === "edited_after" && editDateFilter) {
+              const filterDate = new Date(editDateFilter);
+              filterDate.setHours(0, 0, 0, 0);
+              return lead.updatedAt >= filterDate;
+            }
+            return true;
+          });
+        }
+
+        // Count by status
+        const counts = {
+          contacted: filteredLeads.filter((l) => l.status === "contacted").length,
+          discussingScope: filteredLeads.filter((l) => l.status === "discussing_scope").length,
+          proposalDelivered: filteredLeads.filter((l) => l.status === "proposal_delivered").length,
+          total: filteredLeads.length,
+        };
+
+        setFilteredStatusCounts(counts);
+      } else {
+        // No client-side filters, use server-side counting
+        let baseQuery = supabase
+          .from(Tables.LEADS)
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", profile.tenant_id);
+
+        if (!showIgnored) {
+          baseQuery = baseQuery.neq("status", "ignored");
+        }
+        if (companySearch.trim()) {
+          baseQuery = baseQuery.ilike("company_name", `${companySearch.trim()}%`);
+        }
+        if (warmConnectionSearch.trim()) {
+          baseQuery = baseQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
+        }
+        if (commoditySearch.trim()) {
+          baseQuery = baseQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+        }
+        if (tierFilter !== "all") {
+          baseQuery = baseQuery.eq("tier", tierFilter);
+        }
+        if (companySizeFilter !== "all") {
+          baseQuery = baseQuery.eq("company_size_interval", companySizeFilter);
+        }
+        if (marketCapFilter !== "all" && marketCapFilter === "unknown") {
+          baseQuery = baseQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+        }
+
+        const { count: totalCount, error: totalError } = await baseQuery;
+
+        if (totalError) {
+          console.error("Total count fetch error:", totalError);
+          return;
+        }
+
+        const buildStatusQuery = (status: string) => {
+          let query = supabase
+            .from(Tables.LEADS)
+            .select("id", { count: "exact", head: true })
+            .eq("tenant_id", profile.tenant_id)
+            .eq("status", status);
+
+          if (!showIgnored) {
+            query = query.neq("status", "ignored");
+          }
+          if (companySearch.trim()) {
+            query = query.ilike("company_name", `${companySearch.trim()}%`);
+          }
+          if (warmConnectionSearch.trim()) {
+            query = query.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
+          }
+          if (commoditySearch.trim()) {
+            query = query.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+          }
+          if (tierFilter !== "all") {
+            query = query.eq("tier", tierFilter);
+          }
+          if (companySizeFilter !== "all") {
+            query = query.eq("company_size_interval", companySizeFilter);
+          }
+          if (marketCapFilter !== "all" && marketCapFilter === "unknown") {
+            query = query.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+          }
+
+          return query;
+        };
+
+        const [contactedResult, discussingScopeResult, proposalDeliveredResult] = await Promise.all([
+          buildStatusQuery("contacted"),
+          buildStatusQuery("discussing_scope"),
+          buildStatusQuery("proposal_delivered"),
+        ]);
+
+        const counts = {
+          contacted: contactedResult.count || 0,
+          discussingScope: discussingScopeResult.count || 0,
+          proposalDelivered: proposalDeliveredResult.count || 0,
+          total: totalCount || 0,
+        };
+
+        setFilteredStatusCounts(counts);
+      }
     } catch (error) {
       console.error("Error fetching filtered status counts:", error);
     }
-  }, [profile?.tenant_id, companySearch, warmConnectionSearch, commoditySearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter]);
+  }, [profile?.tenant_id, companySearch, warmConnectionSearch, commoditySearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter, feedbackFilter, commentFilter, editDateFilter]);
 
   // Reset to page 1 when filters or sort change and refetch filtered status counts
   useEffect(() => {
@@ -646,7 +1117,7 @@ const Index = () => {
     if (profile?.tenant_id) {
       fetchFilteredStatusCounts();
     }
-  }, [statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, sortColumn, sortDirection, profile?.tenant_id, fetchFilteredStatusCounts]);
+  }, [statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, feedbackFilter, commentFilter, editDateFilter, editDateFilterType, sortColumn, sortDirection, profile?.tenant_id, fetchFilteredStatusCounts]);
 
   useEffect(() => {
     // Fetch leads for user's tenant (all users have tenant_id now)
@@ -790,6 +1261,108 @@ const Index = () => {
     }
   };
 
+  const handleEditComment = async (commentId: string, newText: string) => {
+    if (!profile?.tenant_id) {
+      toast.error("Unable to edit comment: tenant not found");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from(Tables.COMMENTS)
+        .update({ text: newText })
+        .eq("id", commentId)
+        .eq("tenant_id", profile.tenant_id);
+
+      if (error) throw error;
+
+      // Find the lead that contains this comment and update it
+      setLeads((prevLeads) =>
+        prevLeads.map((lead) => {
+          const commentIndex = lead.comments.findIndex((c) => c.id === commentId);
+          if (commentIndex !== -1) {
+            const updatedComments = [...lead.comments];
+            updatedComments[commentIndex] = {
+              ...updatedComments[commentIndex],
+              text: newText,
+            };
+            return {
+              ...lead,
+              comments: updatedComments,
+              updatedAt: new Date(),
+            };
+          }
+          return lead;
+        })
+      );
+
+      // Update lead's updated_at timestamp
+      const leadWithComment = leads.find((lead) =>
+        lead.comments.some((c) => c.id === commentId)
+      );
+      if (leadWithComment) {
+        await supabase
+          .from(Tables.LEADS)
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", leadWithComment.id);
+      }
+
+      toast.success("Comment updated successfully");
+    } catch (error) {
+      console.error("Error editing comment:", error);
+      toast.error("Failed to update comment");
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!profile?.tenant_id) {
+      toast.error("Unable to delete comment: tenant not found");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from(Tables.COMMENTS)
+        .delete()
+        .eq("id", commentId)
+        .eq("tenant_id", profile.tenant_id);
+
+      if (error) throw error;
+
+      // Find the lead that contains this comment and update it
+      const leadWithComment = leads.find((lead) =>
+        lead.comments.some((c) => c.id === commentId)
+      );
+
+      setLeads((prevLeads) =>
+        prevLeads.map((lead) => {
+          const commentIndex = lead.comments.findIndex((c) => c.id === commentId);
+          if (commentIndex !== -1) {
+            return {
+              ...lead,
+              comments: lead.comments.filter((c) => c.id !== commentId),
+              updatedAt: new Date(),
+            };
+          }
+          return lead;
+        })
+      );
+
+      // Update lead's updated_at timestamp
+      if (leadWithComment) {
+        await supabase
+          .from(Tables.LEADS)
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", leadWithComment.id);
+      }
+
+      toast.success("Comment deleted successfully");
+    } catch (error) {
+      console.error("Error deleting comment:", error);
+      toast.error("Failed to delete comment");
+    }
+  };
+
   // Filtering is now done server-side, so filteredLeads is just the current page
   const filteredLeads = useMemo(() => {
     return leads || [];
@@ -805,9 +1378,13 @@ const Index = () => {
       tierFilter !== "all" ||
       companySizeFilter !== "all" ||
       marketCapFilter !== "all" ||
+      feedbackFilter !== "all" ||
+      commentFilter !== "all" ||
+      (commentFilter === "edited_on" && editDateFilter !== "") ||
+      (commentFilter === "edited_after" && editDateFilter !== "") ||
       showIgnored === true
     );
-  }, [companySearch, warmConnectionSearch, commoditySearch, statusFilter, tierFilter, companySizeFilter, marketCapFilter, showIgnored]);
+  }, [companySearch, warmConnectionSearch, commoditySearch, statusFilter, tierFilter, companySizeFilter, marketCapFilter, feedbackFilter, commentFilter, editDateFilter, showIgnored]);
 
   // Calculate pagination info
   const totalPages = Math.ceil(totalFilteredLeads / pageSize);
@@ -885,7 +1462,7 @@ const Index = () => {
               {statusCounts.total}
               {hasActiveFilters && (
                 <span className="text-sm text-muted-foreground font-normal ml-1.5">
-                  ({filteredStatusCounts.total})
+                  ({filteredStatusCounts.total} filtered)
                 </span>
               )}
             </div>
@@ -896,7 +1473,7 @@ const Index = () => {
               {statusCounts.contacted}
               {hasActiveFilters && (
                 <span className="text-sm text-muted-foreground font-normal ml-1.5">
-                  ({filteredStatusCounts.contacted})
+                  ({filteredStatusCounts.contacted} filtered)
                 </span>
               )}
             </div>
@@ -907,7 +1484,7 @@ const Index = () => {
               {statusCounts.discussingScope}
               {hasActiveFilters && (
                 <span className="text-sm text-muted-foreground font-normal ml-1.5">
-                  ({filteredStatusCounts.discussingScope})
+                  ({filteredStatusCounts.discussingScope} filtered)
                 </span>
               )}
             </div>
@@ -918,7 +1495,7 @@ const Index = () => {
               {statusCounts.proposalDelivered}
               {hasActiveFilters && (
                 <span className="text-sm text-muted-foreground font-normal ml-1.5">
-                  ({filteredStatusCounts.proposalDelivered})
+                  ({filteredStatusCounts.proposalDelivered} filtered)
                 </span>
               )}
             </div>
@@ -1023,6 +1600,49 @@ const Index = () => {
                 <SelectItem value="unknown">Unknown</SelectItem>
               </SelectContent>
             </Select>
+            <Select
+              value={feedbackFilter}
+              onValueChange={(value) => setFeedbackFilter(value as "all" | "good" | "bad")}
+            >
+              <SelectTrigger className="flex-1 min-w-[140px] sm:min-w-[150px] h-9">
+                <SelectValue placeholder="Filter by feedback" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Feedback</SelectItem>
+                <SelectItem value="good">Good Leads</SelectItem>
+                <SelectItem value="bad">Bad Leads</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={commentFilter}
+              onValueChange={(value) => {
+                setCommentFilter(value as "all" | "has_comments" | "recently_commented" | "edited_on" | "edited_after");
+                if (value === "all") {
+                  setEditDateFilter("");
+                }
+              }}
+            >
+              <SelectTrigger className="flex-1 min-w-[160px] sm:min-w-[170px] h-9">
+                <SelectValue placeholder="Filter by comments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All/No Comments</SelectItem>
+                <SelectItem value="has_comments">Has Comments</SelectItem>
+                <SelectItem value="recently_commented">Recently Commented</SelectItem>
+                <SelectItem value="edited_on">Edited On</SelectItem>
+                <SelectItem value="edited_after">Edited After</SelectItem>
+              </SelectContent>
+            </Select>
+            {(commentFilter === "edited_on" || commentFilter === "edited_after") && (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="date"
+                  value={editDateFilter}
+                  onChange={(e) => setEditDateFilter(e.target.value)}
+                  className="h-9 min-w-[140px]"
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -1220,6 +1840,8 @@ const Index = () => {
               leads={filteredLeads}
               onStatusChange={handleStatusChange}
               onAddComment={handleAddComment}
+              onEditComment={handleEditComment}
+              onDeleteComment={handleDeleteComment}
               fieldVisibility={fieldVisibility}
               sortColumn={sortColumn}
               sortDirection={sortDirection}

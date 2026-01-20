@@ -14,6 +14,7 @@ export type LeadFieldKey =
   | "marketCapitalisation"
   | "companySizeInterval"
   | "commodityFields"
+  | "lastModified"
   | "actionEmail"
   | "actionFeedback"
   | "actionComments";
@@ -36,6 +37,7 @@ export const defaultFieldVisibility: FieldVisibilityConfig = {
   marketCapitalisation: true,
   companySizeInterval: true,
   commodityFields: true,
+  lastModified: true,
   actionEmail: true,
   actionFeedback: true,
   actionComments: true,

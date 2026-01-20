@@ -347,6 +347,11 @@ const AdminTenantDetail = () => {
             migratedVisibility.actionComments = actionsValue ?? true;
             delete (migratedVisibility as any).actions;
           }
+
+          // Set default for lastModified if it doesn't exist (defaults to true)
+          if (!("lastModified" in migratedVisibility)) {
+            migratedVisibility.lastModified = true;
+          }
           
           setFieldVisibility({
             ...defaultFieldVisibility,
@@ -1139,6 +1144,16 @@ const AdminTenantDetail = () => {
                     }
                   />
                   <Label htmlFor="field-commodity-fields">Commodities</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="field-last-modified"
+                    checked={fieldVisibility.lastModified}
+                    onCheckedChange={(checked) =>
+                      handleFieldVisibilityChange("lastModified", checked === true)
+                    }
+                  />
+                  <Label htmlFor="field-last-modified">Last Modified</Label>
                 </div>
               </div>
               

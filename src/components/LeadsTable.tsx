@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { MessageSquare, X, Send, Mail, MapPin, Building2, ArrowUpDown, ArrowUp, ArrowDown, MessageSquareText, Link2 } from "lucide-react";
+import { MessageSquare, X, Send, Mail, MapPin, Building2, ArrowUpDown, ArrowUp, ArrowDown, MessageSquareText, Link2, Edit2, Trash2 } from "lucide-react";
 import { TierBadge } from "@/components/TierBadge";
 import { toast } from "sonner";
 import { EmailDialog } from "@/components/EmailDialog";
@@ -26,18 +26,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { FieldVisibilityConfig, defaultFieldVisibility } from "@/types/tenantPreferences";
 
-type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "followsOnLinkedin" | "createdAt" | "marketCapitalisation" | "companySizeInterval" | null;
+type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "followsOnLinkedin" | "createdAt" | "marketCapitalisation" | "companySizeInterval" | "lastCommentDate" | null;
 type SortDirection = "asc" | "desc" | null;
-
-interface LeadsTableProps {
-  leads: Lead[];
-  onStatusChange: (leadId: string, newStatus: LeadStatus) => void;
-  onAddComment: (leadId: string, comment: string) => void;
-  fieldVisibility?: FieldVisibilityConfig;
-  sortColumn?: SortColumn;
-  sortDirection?: SortDirection;
-  onSort?: (column: SortColumn) => void;
-}
 
 const statusConfig: Record<
   LeadStatus,
@@ -84,10 +74,24 @@ const statusConfig: Record<
   },
 };
 
-export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibility, sortColumn = null, sortDirection = null, onSort }: LeadsTableProps) {
+interface LeadsTableProps {
+  leads: Lead[];
+  onStatusChange: (leadId: string, newStatus: LeadStatus) => void;
+  onAddComment: (leadId: string, comment: string) => void;
+  onEditComment?: (commentId: string, newText: string) => void;
+  onDeleteComment?: (commentId: string) => void;
+  fieldVisibility?: FieldVisibilityConfig;
+  sortColumn?: SortColumn;
+  sortDirection?: SortDirection;
+  onSort?: (column: SortColumn) => void;
+}
+
+export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment, onDeleteComment, fieldVisibility, sortColumn = null, sortDirection = null, onSort }: LeadsTableProps) {
   const { profile } = useAuth();
   const [commentingLead, setCommentingLead] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState("");
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -95,8 +99,11 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
   const visibility = fieldVisibility || defaultFieldVisibility;
   // Calculate visible columns - industry/location/description count as one column if any are visible
   const hasCompanyDetails = visibility.industry || visibility.location || visibility.description;
+  // Actions column is visible only if at least one action is enabled
   const hasActions = visibility.actionEmail || visibility.actionFeedback || visibility.actionComments;
-  const visibleColumnCount = 
+  // Last Modified column visibility is controlled by field visibility setting
+  const showLastModified = visibility.lastModified;
+  const visibleColumnCount =
     (visibility.company ? 1 : 0) +
     (hasCompanyDetails ? 1 : 0) +
     (visibility.contactPerson ? 1 : 0) +
@@ -109,7 +116,14 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
     (visibility.marketCapitalisation ? 1 : 0) +
     (visibility.companySizeInterval ? 1 : 0) +
     (visibility.commodityFields ? 1 : 0) +
+    (showLastModified ? 1 : 0) +
     (hasActions ? 1 : 0) || 1;
+
+  // Helper function to get the last comment date
+  const getLastCommentDate = (lead: Lead): Date | null => {
+    if (lead.comments.length === 0) return null;
+    return new Date(Math.max(...lead.comments.map(c => c.createdAt.getTime())));
+  };
 
   const isNewLead = (lead: Lead): boolean => {
     const threeDaysAgo = new Date();
@@ -148,7 +162,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
 
     const userName = profile?.full_name || profile?.email || "Current User";
     const qualityText = quality === "good" ? "good" : "bad";
-    const commentText = `Marked as ${qualityText} lead by ${userName}. Reason: ${reason}`;
+    const commentText = `Marked as ${qualityText} lead by ${userName}.\n\nReason: ${reason}`;
 
     onAddComment(selectedLead.id, commentText);
     toast.success(`Lead marked as ${qualityText} quality`);
@@ -184,14 +198,14 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
   }
 
   return (
-    <div className="rounded-xl border border-border/50 bg-card shadow-soft overflow-hidden">
-      <div className="overflow-x-auto">
-        <Table>
+    <div className="rounded-xl border border-border/50 bg-card shadow-soft overflow-hidden w-full">
+      <div className="overflow-x-auto w-full">
+        <Table className="w-full">
           <TableHeader>
             <TableRow className="border-b-2 border-border/60 hover:bg-transparent">
               {visibility.company && (
                 <TableHead
-                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors min-w-[120px]"
                   onClick={() => handleSort("companyName")}
                 >
                   <div className="flex items-center">
@@ -201,13 +215,13 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                 </TableHead>
               )}
               {(visibility.industry || visibility.location || visibility.description) && (
-                <TableHead className="h-14 font-semibold text-sm min-w-[200px] max-w-[250px]">
+                <TableHead className="h-14 font-semibold text-sm w-[180px]">
                   Location
                 </TableHead>
               )}
               {visibility.contactPerson && (
                 <TableHead
-                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors min-w-[100px]"
                   onClick={() => handleSort("contactPerson")}
                 >
                   <div className="flex items-center">
@@ -231,7 +245,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
               */}
               {visibility.role && (
                 <TableHead
-                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors min-w-[100px]"
                   onClick={() => handleSort("role")}
                 >
                   <div className="flex items-center">
@@ -242,7 +256,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
               )}
               {visibility.tier && (
                 <TableHead
-                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[100px]"
+                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[90px]"
                   onClick={() => handleSort("tier")}
                 >
                   <div className="flex items-center">
@@ -253,7 +267,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
               )}
               {visibility.status && (
                 <TableHead
-                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[140px]"
+                  className="h-14 font-semibold text-sm cursor-pointer hover:bg-muted/50 transition-colors w-[130px]"
                   onClick={() => handleSort("status")}
                 >
                   <div className="flex items-center">
@@ -263,13 +277,13 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                 </TableHead>
               )}
               {visibility.warmConnections && (
-                <TableHead className="h-14 font-semibold text-sm min-w-[150px] max-w-[200px]">
+                <TableHead className="h-14 font-semibold text-sm w-[140px]">
                   Warm Connections
                 </TableHead>
               )}
               {visibility.followsOnLinkedin && (
                 <TableHead
-                  className="h-14 font-semibold text-sm w-[140px] cursor-pointer hover:bg-muted/50 transition-colors"
+                  className="h-14 font-semibold text-sm w-[110px] cursor-pointer hover:bg-muted/50 transition-colors"
                   onClick={() => handleSort("followsOnLinkedin")}
                 >
                   <div className="flex items-center">
@@ -280,7 +294,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
               )}
               {visibility.marketCapitalisation && (
                 <TableHead
-                  className="h-14 font-semibold text-sm w-[140px] cursor-pointer hover:bg-muted/50 transition-colors"
+                  className="h-14 font-semibold text-sm w-[120px] cursor-pointer hover:bg-muted/50 transition-colors"
                   onClick={() => handleSort("marketCapitalisation")}
                 >
                   <div className="flex items-center">
@@ -291,7 +305,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
               )}
               {visibility.companySizeInterval && (
                 <TableHead
-                  className="h-14 font-semibold text-sm w-[140px] cursor-pointer hover:bg-muted/50 transition-colors"
+                  className="h-14 font-semibold text-sm w-[120px] cursor-pointer hover:bg-muted/50 transition-colors"
                   onClick={() => handleSort("companySizeInterval")}
                 >
                   <div className="flex items-center">
@@ -301,7 +315,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                 </TableHead>
               )}
               {visibility.commodityFields && (
-                <TableHead className="h-14 font-semibold text-sm w-[150px]">
+                <TableHead className="h-14 font-semibold text-sm w-[130px]">
                   Commodities
                 </TableHead>
               )}
@@ -312,7 +326,18 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                 </TableHead>
               )}
               */}
-              {(visibility.actionEmail || visibility.actionFeedback || visibility.actionComments) && (
+              {showLastModified && (
+                <TableHead
+                  className="h-14 font-semibold text-sm w-[140px] cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("lastCommentDate")}
+                >
+                  <div className="flex items-center">
+                    Last Modified
+                    <SortIcon column="lastCommentDate" />
+                  </div>
+                </TableHead>
+              )}
+              {hasActions && (
                 <TableHead className="h-14 font-semibold text-sm text-right">
                   Actions
                 </TableHead>
@@ -323,12 +348,11 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
             {leads.map((lead, index) => (
               <Fragment key={lead.id}>
                 <TableRow
-                  className={`group border-b border-border/50 hover:bg-success/8 hover:border-success/40 transition-all duration-200 ${
-                    isNewLead(lead) ? "border-l-4 border-l-success bg-success/5" : ""
-                  } ${index % 2 === 0 ? "bg-background" : "bg-muted/10"}`}
+                  className={`group border-b border-border/50 hover:bg-success/8 hover:border-success/40 transition-all duration-200 ${isNewLead(lead) ? "border-l-4 border-l-success bg-success/5" : ""
+                    } ${index % 2 === 0 ? "bg-background" : "bg-muted/10"}`}
                 >
                   {visibility.company && (
-                    <TableCell className="py-5 px-4">
+                    <TableCell className="py-5 px-4 min-w-[120px]">
                       <span className="font-semibold text-foreground">
                         {lead.companyName}
                       </span>
@@ -336,7 +360,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                   )}
                   {(visibility.industry || visibility.location || visibility.description) && (
                     <TableCell className="py-5 px-4">
-                      <div className="flex flex-col gap-1.5 min-w-[200px] max-w-[250px]">
+                      <div className="flex flex-col gap-1.5 w-[180px]">
                         {visibility.description && lead.company?.description && (
                           <span className="inline-flex items-start gap-1 px-2 py-1 rounded-md bg-muted/60 text-muted-foreground text-xs line-clamp-2 leading-relaxed">
                             {lead.company.description}
@@ -384,17 +408,17 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                   )}
                   */}
                   {visibility.role && (
-                    <TableCell className="py-5 px-4">
+                    <TableCell className="py-5 px-4 min-w-[100px]">
                       <span className="text-sm">{lead.role}</span>
                     </TableCell>
                   )}
                   {visibility.tier && (
-                    <TableCell className="py-5 px-4 w-[100px]">
+                    <TableCell className="py-5 px-4 w-[90px]">
                       <TierBadge tier={lead.tier} />
                     </TableCell>
                   )}
                   {visibility.status && (
-                    <TableCell className="py-5 px-4 w-[140px]">
+                    <TableCell className="py-5 px-4 w-[130px]">
                       {(() => {
                         const config = statusConfig[lead.status];
                         return (
@@ -404,7 +428,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                           >
                             <SelectTrigger
                               className={cn(
-                                "w-[130px] h-9 text-xs font-medium px-3 border border-transparent",
+                                "w-[120px] h-9 text-xs font-medium px-3 border border-transparent",
                                 config?.triggerClass
                               )}
                             >
@@ -467,7 +491,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                     </TableCell>
                   )}
                   {visibility.warmConnections && (
-                    <TableCell className="py-5 px-4 min-w-[150px] max-w-[200px]">
+                    <TableCell className="py-5 px-4 w-[140px]">
                       {lead.warmConnections ? (
                         <span className="text-xs text-muted-foreground block line-clamp-2">
                           {lead.warmConnections}
@@ -478,7 +502,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                     </TableCell>
                   )}
                   {visibility.followsOnLinkedin && (
-                    <TableCell className="py-5 px-4 w-[140px]">
+                    <TableCell className="py-5 px-4 w-[110px]">
                       {lead.followsOnLinkedin ? (
                         <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100 text-xs font-medium">
                           Yes
@@ -491,7 +515,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                     </TableCell>
                   )}
                   {visibility.marketCapitalisation && (
-                    <TableCell className="py-5 px-4 w-[140px]">
+                    <TableCell className="py-5 px-4 w-[120px]">
                       {lead.marketCapitalisation ? (
                         <span className="text-sm">{lead.marketCapitalisation}</span>
                       ) : (
@@ -500,7 +524,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                     </TableCell>
                   )}
                   {visibility.companySizeInterval && (
-                    <TableCell className="py-5 px-4 w-[140px]">
+                    <TableCell className="py-5 px-4 w-[120px]">
                       {lead.companySizeInterval ? (
                         <span className="text-sm">{lead.companySizeInterval}</span>
                       ) : (
@@ -509,7 +533,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                     </TableCell>
                   )}
                   {visibility.commodityFields && (
-                    <TableCell className="py-5 px-4 w-[150px]">
+                    <TableCell className="py-5 px-4 w-[130px]">
                       {lead.commodityFields ? (
                         <span className="text-xs text-muted-foreground block line-clamp-2">{lead.commodityFields}</span>
                       ) : (
@@ -533,8 +557,44 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                     </TableCell>
                   )}
                   */}
-                  {(visibility.actionEmail || visibility.actionFeedback || visibility.actionComments) && (
-                    <TableCell className="py-5 px-4 text-right">
+                  {showLastModified && (
+                    <TableCell className="py-5 px-4 w-[140px]">
+                      {(() => {
+                        const lastCommentDate = getLastCommentDate(lead);
+                        if (!lastCommentDate) {
+                          return <span className="text-xs text-muted-foreground/50 italic">-</span>;
+                        }
+                        const now = new Date();
+                        const diffMs = now.getTime() - lastCommentDate.getTime();
+                        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+                        let displayText: string;
+                        if (diffDays === 0) {
+                          const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                          if (diffHours === 0) {
+                            const diffMins = Math.floor(diffMs / (1000 * 60));
+                            displayText = diffMins <= 1 ? "Just now" : `${diffMins}m ago`;
+                          } else {
+                            displayText = `${diffHours}h ago`;
+                          }
+                        } else if (diffDays === 1) {
+                          displayText = "Yesterday";
+                        } else if (diffDays < 7) {
+                          displayText = `${diffDays}d ago`;
+                        } else {
+                          displayText = lastCommentDate.toLocaleDateString();
+                        }
+
+                        return (
+                          <span className="text-xs text-muted-foreground" title={lastCommentDate.toLocaleString()}>
+                            {displayText}
+                          </span>
+                        );
+                      })()}
+                    </TableCell>
+                  )}
+                  {hasActions && (
+                    <TableCell className="py-5 px-4 text-right w-[120px]">
                       <div className="flex justify-end gap-2">
                         {visibility.actionEmail && (
                           <Button
@@ -564,13 +624,12 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                             size="sm"
                             onClick={() => setCommentingLead(commentingLead === lead.id ? null : lead.id)}
                             title={commentingLead === lead.id ? "Close Comments" : "View/Add Comments"}
-                            className={`h-9 w-9 p-0 relative transition-all duration-200 ${
-                              commentingLead === lead.id
-                                ? "text-success bg-success/10"
-                                : lead.comments.length > 0
+                            className={`h-9 w-9 p-0 relative transition-all duration-200 ${commentingLead === lead.id
+                              ? "text-success bg-success/10"
+                              : lead.comments.length > 0
                                 ? "text-primary hover:text-success hover:bg-success/10"
                                 : "text-muted-foreground hover:text-success hover:bg-success/10"
-                            }`}
+                              }`}
                           >
                             {commentingLead === lead.id ? (
                               <X className="h-4 w-4" />
@@ -597,14 +656,97 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, fieldVisibilit
                         {lead.comments.length > 0 && (
                           <div className="space-y-3">
                             <h4 className="text-sm font-semibold text-foreground mb-3">Comments ({lead.comments.length})</h4>
-                            {lead.comments.map((comment) => (
-                              <div key={comment.id} className="rounded-lg bg-card p-4 border border-border/50 shadow-soft">
-                                <p className="text-sm leading-relaxed text-foreground">{comment.text}</p>
-                                <p className="text-xs text-muted-foreground mt-2">
-                                  {comment.author} • {new Date(comment.createdAt).toLocaleDateString()}
-                                </p>
-                              </div>
-                            ))}
+                            {lead.comments.map((comment) => {
+                              // Check if current user is the author of this comment
+                              // Author is stored as: profile.full_name || profile.email || "Current User"
+                              const currentUserName = profile?.full_name || profile?.email || "Current User";
+                              const isCommentAuthor =
+                                comment.author === currentUserName ||
+                                comment.author === profile?.full_name ||
+                                comment.author === profile?.email ||
+                                (comment.author === "Current User" && !profile?.full_name && !profile?.email);
+
+                              return (
+                                <div key={comment.id} className="rounded-lg bg-card p-4 border border-border/50 shadow-soft">
+                                  {editingCommentId === comment.id ? (
+                                    <div className="space-y-2">
+                                      <Textarea
+                                        value={editingCommentText}
+                                        onChange={(e) => setEditingCommentText(e.target.value)}
+                                        className="min-h-[80px] bg-background resize-none"
+                                      />
+                                      <div className="flex gap-2 justify-end">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => {
+                                            setEditingCommentId(null);
+                                            setEditingCommentText("");
+                                          }}
+                                        >
+                                          Cancel
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          onClick={() => {
+                                            if (onEditComment && editingCommentText.trim()) {
+                                              onEditComment(comment.id, editingCommentText.trim());
+                                              setEditingCommentId(null);
+                                              setEditingCommentText("");
+                                            }
+                                          }}
+                                          disabled={!editingCommentText.trim()}
+                                        >
+                                          Save
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <p className="text-sm leading-relaxed text-foreground">{comment.text}</p>
+                                      <div className="flex items-center justify-between mt-2">
+                                        <p className="text-xs text-muted-foreground">
+                                          {comment.author} • {new Date(comment.createdAt).toLocaleDateString()}
+                                        </p>
+                                        {isCommentAuthor && (onEditComment || onDeleteComment) && (
+                                          <div className="flex gap-2">
+                                            {onEditComment && (
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                  setEditingCommentId(comment.id);
+                                                  setEditingCommentText(comment.text);
+                                                }}
+                                                className="h-7 px-2 text-xs"
+                                              >
+                                                <Edit2 className="h-3 w-3 mr-1" />
+                                                Edit
+                                              </Button>
+                                            )}
+                                            {onDeleteComment && (
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                  if (confirm("Are you sure you want to delete this comment?")) {
+                                                    onDeleteComment(comment.id);
+                                                  }
+                                                }}
+                                                className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                                              >
+                                                <Trash2 className="h-3 w-3 mr-1" />
+                                                Delete
+                                              </Button>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                         <div className="flex gap-2">
