@@ -29,6 +29,10 @@ interface ExportDialogProps {
   onOpenChange: (open: boolean) => void;
   allLeads: Lead[];
   filteredLeads: Lead[];
+  fetchAllLeads: () => Promise<Lead[]>;
+  fetchFilteredLeads: () => Promise<Lead[]>;
+  allLeadsCount?: number;
+  filteredLeadsCount?: number;
 }
 
 export function ExportDialog({
@@ -36,6 +40,10 @@ export function ExportDialog({
   onOpenChange,
   allLeads,
   filteredLeads,
+  fetchAllLeads,
+  fetchFilteredLeads,
+  allLeadsCount,
+  filteredLeadsCount,
 }: ExportDialogProps) {
   const [exportType, setExportType] = useState<"all" | "filtered">("filtered");
   const [format, setFormat] = useState<"csv" | "excel">("excel");
@@ -142,18 +150,20 @@ export function ExportDialog({
     );
   };
 
-  const handleExport = () => {
-    const leadsToExport =
-      exportType === "all" ? allLeads : filteredLeads;
-
-    if (leadsToExport.length === 0) {
-      toast.error("No leads to export");
-      return;
-    }
-
+  const handleExport = async () => {
     setIsExporting(true);
 
     try {
+      // Fetch all leads (all or filtered) when exporting
+      const leadsToExport = exportType === "all" 
+        ? await fetchAllLeads() 
+        : await fetchFilteredLeads();
+
+      if (leadsToExport.length === 0) {
+        toast.error("No leads to export");
+        return;
+      }
+
       if (format === "csv") {
         exportToCSV(leadsToExport);
       } else {
@@ -202,8 +212,8 @@ export function ExportDialog({
                   <div>
                     <div className="font-medium">Filtered Leads</div>
                     <div className="text-sm text-muted-foreground">
-                      {filteredLeads.length} lead
-                      {filteredLeads.length === 1 ? "" : "s"} (based on
+                      {filteredLeadsCount !== undefined ? filteredLeadsCount : filteredLeads.length} lead
+                      {(filteredLeadsCount !== undefined ? filteredLeadsCount : filteredLeads.length) === 1 ? "" : "s"} (based on
                       current filters)
                     </div>
                   </div>
@@ -218,7 +228,7 @@ export function ExportDialog({
                   <div>
                     <div className="font-medium">All Leads</div>
                     <div className="text-sm text-muted-foreground">
-                      {allLeads.length} lead{allLeads.length === 1 ? "" : "s"}
+                      {allLeadsCount !== undefined ? allLeadsCount : allLeads.length} lead{(allLeadsCount !== undefined ? allLeadsCount : allLeads.length) === 1 ? "" : "s"}
                     </div>
                   </div>
                 </Label>

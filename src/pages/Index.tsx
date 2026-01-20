@@ -29,6 +29,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 // Helper function to parse market cap string to numeric value (in millions)
 const parseMarketCap = (marketCap: string | null | undefined): number | null => {
@@ -473,24 +474,17 @@ const Index = () => {
           });
         }
 
-        // Apply client-side sorting (including lastCommentDate)
+        // Apply client-side sorting (including last modified date)
         if (sortColumn && sortDirection !== null) {
           filteredLeads.sort((a, b) => {
             let aValue: any;
             let bValue: any;
 
             if (sortColumn === "lastCommentDate") {
-              // Get the most recent comment date for each lead
-              const getLastCommentDate = (lead: Lead): Date | null => {
-                if (lead.comments.length === 0) return null;
-                return new Date(Math.max(...lead.comments.map(c => c.createdAt.getTime())));
-              };
-              aValue = getLastCommentDate(a);
-              bValue = getLastCommentDate(b);
-              // Handle null values (leads with no comments)
-              if (aValue === null && bValue === null) return 0;
-              if (aValue === null) return 1; // No comments go to end
-              if (bValue === null) return -1; // No comments go to end
+              // Use the lead's updatedAt timestamp as the "last modified" date.
+              // This is updated on status changes and comment changes.
+              aValue = a.updatedAt;
+              bValue = b.updatedAt;
             } else {
               // Use existing sorting logic for other columns
               const columnMap: Record<string, keyof Lead> = {
@@ -767,20 +761,16 @@ const Index = () => {
         });
       }
 
-      // Apply client-side sorting for lastCommentDate (if needed)
+      // Apply client-side sorting for last modified date (if needed)
       if (sortColumn === "lastCommentDate" && sortDirection !== null) {
         filteredLeads.sort((a, b) => {
-          // Get the most recent comment date for each lead
-          const getLastCommentDate = (lead: Lead): Date | null => {
-            if (lead.comments.length === 0) return null;
-            return new Date(Math.max(...lead.comments.map(c => c.createdAt.getTime())));
-          };
-          const aValue = getLastCommentDate(a);
-          const bValue = getLastCommentDate(b);
-          // Handle null values (leads with no comments)
-          if (aValue === null && bValue === null) return 0;
-          if (aValue === null) return 1; // No comments go to end
-          if (bValue === null) return -1; // No comments go to end
+          // Use the lead's updatedAt timestamp as the "last modified" date.
+          const aValue = a.updatedAt;
+          const bValue = b.updatedAt;
+
+          if (!aValue && !bValue) return 0;
+          if (!aValue) return 1;
+          if (!bValue) return -1;
 
           return sortDirection === "asc"
             ? aValue.getTime() - bValue.getTime()
@@ -1400,6 +1390,368 @@ const Index = () => {
     }
   };
 
+  // Fetch all leads for export (no filters, no pagination)
+  const fetchAllLeadsForExport = useCallback(async (): Promise<Lead[]> => {
+    if (!profile?.tenant_id) return [];
+
+    try {
+      // Fetch ALL leads without pagination
+      let allLeadsQuery = supabase
+        .from(Tables.LEADS)
+        .select("*")
+        .eq("tenant_id", profile.tenant_id)
+        .order("created_at", { ascending: false });
+
+      const { data: allLeadsData, error: allLeadsError } = await allLeadsQuery;
+
+      if (allLeadsError) {
+        console.error("Leads fetch error:", allLeadsError);
+        throw new Error(`Failed to fetch leads: ${allLeadsError.message}`);
+      }
+
+      // Fetch all comments for these leads
+      const allLeadIds = (allLeadsData || []).map((lead: any) => lead.id);
+      let allCommentsData: any[] = [];
+
+      if (allLeadIds.length > 0) {
+        const { data: comments, error: commentsError } = await supabase
+          .from(Tables.COMMENTS)
+          .select("*")
+          .eq("tenant_id", profile.tenant_id)
+          .in("lead_id", allLeadIds)
+          .order("created_at", { ascending: true });
+
+        if (!commentsError && comments) {
+          allCommentsData = comments || [];
+        }
+      }
+
+      // Fetch companies for all leads
+      const uniqueCompanyNames = [...new Set((allLeadsData || []).map((lead: any) => lead.company_name))];
+      const companiesMap = new Map<string, { industry?: string; location?: string; annualRevenue?: string; description?: string }>();
+
+      if (uniqueCompanyNames.length > 0) {
+        const { data: companiesData, error: companiesError } = await supabase
+          .from(Tables.COMPANIES)
+          .select("name, industry, location, annual_revenue, description")
+          .in("name", uniqueCompanyNames)
+          .eq("tenant_id", profile.tenant_id);
+
+        if (!companiesError && companiesData) {
+          companiesData.forEach((company: any) => {
+            companiesMap.set(company.name, {
+              industry: company.industry,
+              location: company.location,
+              annualRevenue: company.annual_revenue,
+              description: company.description,
+            });
+          });
+        }
+      }
+
+      // Combine leads with comments and company data
+      const allLeadsWithComments: Lead[] = (allLeadsData || []).map((lead: any) => {
+        const leadComments: Comment[] = allCommentsData
+          .filter((comment) => comment.lead_id === lead.id)
+          .map((comment) => ({
+            id: comment.id,
+            text: comment.text,
+            author: comment.author,
+            createdAt: new Date(comment.created_at || ""),
+          }));
+
+        return {
+          id: lead.id,
+          companyName: lead.company_name,
+          contactPerson: lead.contact_person,
+          contactEmail: lead.contact_email,
+          role: lead.role,
+          status: lead.status as LeadStatus,
+          tier: (lead.tier as LeadTier) || "2nd",
+          tierReason: lead.tier_reason,
+          warmConnections: lead.warm_connections,
+          isConnectedToTenant: lead.is_connected_to_tenant,
+          followsOnLinkedin: lead.follows_on_linkedin,
+          marketCapitalisation: lead.market_capitalisation,
+          companySizeInterval: lead.company_size_interval,
+          commodityFields: lead.commodity_fields,
+          comments: leadComments,
+          createdAt: new Date(lead.created_at || ""),
+          updatedAt: new Date(lead.updated_at || ""),
+          company: companiesMap.get(lead.company_name) || undefined,
+        };
+      });
+
+      return allLeadsWithComments;
+    } catch (error) {
+      console.error("Error fetching all leads for export:", error);
+      throw error;
+    }
+  }, [profile?.tenant_id]);
+
+  // Fetch filtered leads for export (with current filters, no pagination)
+  const fetchFilteredLeadsForExport = useCallback(async (): Promise<Lead[]> => {
+    if (!profile?.tenant_id) return [];
+
+    try {
+      // Check if we need client-side filtering
+      const needsClientSideFiltering = feedbackFilter !== "all" || commentFilter !== "all" ||
+        (marketCapFilter !== "all" && marketCapFilter !== "unknown");
+
+      // Fetch ALL leads (no pagination) to apply filters
+      let allLeadsQuery = supabase
+        .from(Tables.LEADS)
+        .select("*")
+        .eq("tenant_id", profile.tenant_id);
+
+      // Apply server-side filters
+      if (statusFilter === "ignored") {
+        allLeadsQuery = allLeadsQuery.eq("status", "ignored");
+      } else if (statusFilter !== "all") {
+        allLeadsQuery = allLeadsQuery.eq("status", statusFilter);
+        if (!showIgnored) {
+          allLeadsQuery = allLeadsQuery.neq("status", "ignored");
+        }
+      } else if (!showIgnored) {
+        allLeadsQuery = allLeadsQuery.neq("status", "ignored");
+      }
+
+      if (companySearch.trim()) {
+        allLeadsQuery = allLeadsQuery.ilike("company_name", `${companySearch.trim()}%`);
+      }
+      if (warmConnectionSearch.trim()) {
+        allLeadsQuery = allLeadsQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
+      }
+      if (commoditySearch.trim()) {
+        allLeadsQuery = allLeadsQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+      }
+      if (tierFilter !== "all") {
+        allLeadsQuery = allLeadsQuery.eq("tier", tierFilter);
+      }
+      if (companySizeFilter !== "all") {
+        allLeadsQuery = allLeadsQuery.eq("company_size_interval", companySizeFilter);
+      }
+      if (marketCapFilter !== "all" && marketCapFilter === "unknown") {
+        allLeadsQuery = allLeadsQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+      }
+
+      // Apply sorting
+      if (sortColumn && sortDirection !== null && sortColumn !== "lastCommentDate") {
+        const columnMap: Record<string, string> = {
+          companyName: "company_name",
+          contactPerson: "contact_person",
+          contactEmail: "contact_email",
+          role: "role",
+          tier: "tier",
+          status: "status",
+          followsOnLinkedin: "follows_on_linkedin",
+          createdAt: "created_at",
+          marketCapitalisation: "market_capitalisation",
+          companySizeInterval: "company_size_interval",
+        };
+        const dbColumn = columnMap[sortColumn];
+        if (dbColumn) {
+          allLeadsQuery = allLeadsQuery.order(dbColumn, { ascending: sortDirection === "asc" });
+        } else {
+          allLeadsQuery = allLeadsQuery.order("created_at", { ascending: false });
+        }
+      } else {
+        allLeadsQuery = allLeadsQuery.order("created_at", { ascending: false });
+      }
+
+      const { data: allLeadsData, error: allLeadsError } = await allLeadsQuery;
+
+      if (allLeadsError) {
+        console.error("Leads fetch error:", allLeadsError);
+        throw new Error(`Failed to fetch leads: ${allLeadsError.message}`);
+      }
+
+      // Fetch all comments for these leads
+      const allLeadIds = (allLeadsData || []).map((lead: any) => lead.id);
+      let allCommentsData: any[] = [];
+
+      if (allLeadIds.length > 0) {
+        const { data: comments, error: commentsError } = await supabase
+          .from(Tables.COMMENTS)
+          .select("*")
+          .eq("tenant_id", profile.tenant_id)
+          .in("lead_id", allLeadIds)
+          .order("created_at", { ascending: true });
+
+        if (!commentsError && comments) {
+          allCommentsData = comments || [];
+        }
+      }
+
+      // Fetch companies for all leads
+      const uniqueCompanyNames = [...new Set((allLeadsData || []).map((lead: any) => lead.company_name))];
+      const companiesMap = new Map<string, { industry?: string; location?: string; annualRevenue?: string; description?: string }>();
+
+      if (uniqueCompanyNames.length > 0) {
+        const { data: companiesData, error: companiesError } = await supabase
+          .from(Tables.COMPANIES)
+          .select("name, industry, location, annual_revenue, description")
+          .in("name", uniqueCompanyNames)
+          .eq("tenant_id", profile.tenant_id);
+
+        if (!companiesError && companiesData) {
+          companiesData.forEach((company: any) => {
+            companiesMap.set(company.name, {
+              industry: company.industry,
+              location: company.location,
+              annualRevenue: company.annual_revenue,
+              description: company.description,
+            });
+          });
+        }
+      }
+
+      // Combine leads with comments and company data
+      const allLeadsWithComments: Lead[] = (allLeadsData || []).map((lead: any) => {
+        const leadComments: Comment[] = allCommentsData
+          .filter((comment) => comment.lead_id === lead.id)
+          .map((comment) => ({
+            id: comment.id,
+            text: comment.text,
+            author: comment.author,
+            createdAt: new Date(comment.created_at || ""),
+          }));
+
+        return {
+          id: lead.id,
+          companyName: lead.company_name,
+          contactPerson: lead.contact_person,
+          contactEmail: lead.contact_email,
+          role: lead.role,
+          status: lead.status as LeadStatus,
+          tier: (lead.tier as LeadTier) || "2nd",
+          tierReason: lead.tier_reason,
+          warmConnections: lead.warm_connections,
+          isConnectedToTenant: lead.is_connected_to_tenant,
+          followsOnLinkedin: lead.follows_on_linkedin,
+          marketCapitalisation: lead.market_capitalisation,
+          companySizeInterval: lead.company_size_interval,
+          commodityFields: lead.commodity_fields,
+          comments: leadComments,
+          createdAt: new Date(lead.created_at || ""),
+          updatedAt: new Date(lead.updated_at || ""),
+          company: companiesMap.get(lead.company_name) || undefined,
+        };
+      });
+
+      // Apply client-side filters
+      let filteredLeads = allLeadsWithComments;
+
+      // Apply market cap bracket filtering
+      if (marketCapFilter !== "all" && marketCapFilter !== "unknown") {
+        filteredLeads = filteredLeads.filter((lead) => {
+          return marketCapInBracket(lead.marketCapitalisation, marketCapFilter);
+        });
+      }
+
+      // Apply feedback filter
+      if (feedbackFilter !== "all") {
+        filteredLeads = filteredLeads.filter((lead) => {
+          const hasFeedback = lead.comments.some((comment) => {
+            const text = comment.text.toLowerCase();
+            return text.includes("marked as") && (
+              (feedbackFilter === "good" && text.includes("good lead")) ||
+              (feedbackFilter === "bad" && text.includes("bad lead"))
+            );
+          });
+          return hasFeedback;
+        });
+      }
+
+      // Apply comment filter
+      if (commentFilter !== "all") {
+        filteredLeads = filteredLeads.filter((lead) => {
+          if (commentFilter === "has_comments") {
+            return lead.comments.length > 0;
+          } else if (commentFilter === "recently_commented") {
+            const now = new Date();
+            const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            return lead.comments.some((comment) => comment.createdAt >= sevenDaysAgo);
+          } else if (commentFilter === "edited_on" && editDateFilter) {
+            const filterDate = new Date(editDateFilter);
+            filterDate.setHours(0, 0, 0, 0);
+            const nextDay = new Date(filterDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            const leadDate = new Date(lead.updatedAt);
+            leadDate.setHours(0, 0, 0, 0);
+            return leadDate >= filterDate && leadDate < nextDay;
+          } else if (commentFilter === "edited_after" && editDateFilter) {
+            const filterDate = new Date(editDateFilter);
+            filterDate.setHours(0, 0, 0, 0);
+            return lead.updatedAt >= filterDate;
+          }
+          return true;
+        });
+      }
+
+      // Apply client-side sorting (including last modified date)
+      if (sortColumn && sortDirection !== null) {
+        filteredLeads.sort((a, b) => {
+          let aValue: any;
+          let bValue: any;
+
+          if (sortColumn === "lastCommentDate") {
+            // Use the lead's updatedAt timestamp as the "last modified" date.
+            aValue = a.updatedAt;
+            bValue = b.updatedAt;
+          } else {
+            // Use existing sorting logic for other columns
+            const columnMap: Record<string, keyof Lead> = {
+              companyName: "companyName",
+              contactPerson: "contactPerson",
+              contactEmail: "contactEmail",
+              role: "role",
+              tier: "tier",
+              status: "status",
+              followsOnLinkedin: "followsOnLinkedin",
+              createdAt: "createdAt",
+              marketCapitalisation: "marketCapitalisation",
+              companySizeInterval: "companySizeInterval",
+            };
+            const leadKey = columnMap[sortColumn];
+            if (leadKey) {
+              aValue = a[leadKey];
+              bValue = b[leadKey];
+            }
+          }
+
+          // Compare values
+          if (aValue === bValue) return 0;
+          if (aValue === null || aValue === undefined) return 1;
+          if (bValue === null || bValue === undefined) return -1;
+
+          if (aValue instanceof Date && bValue instanceof Date) {
+            return sortDirection === "asc"
+              ? aValue.getTime() - bValue.getTime()
+              : bValue.getTime() - aValue.getTime();
+          }
+
+          if (typeof aValue === "string" && typeof bValue === "string") {
+            return sortDirection === "asc"
+              ? aValue.localeCompare(bValue)
+              : bValue.localeCompare(aValue);
+          }
+
+          if (typeof aValue === "number" && typeof bValue === "number") {
+            return sortDirection === "asc" ? aValue - bValue : bValue - aValue;
+          }
+
+          return 0;
+        });
+      }
+
+      return filteredLeads;
+    } catch (error) {
+      console.error("Error fetching filtered leads for export:", error);
+      throw error;
+    }
+  }, [profile?.tenant_id, statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter, feedbackFilter, commentFilter, editDateFilter, editDateFilterType, sortColumn, sortDirection]);
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -1512,7 +1864,10 @@ const Index = () => {
                 placeholder="Search companies..."
                 value={companySearch}
                 onChange={(e) => setCompanySearch(e.target.value)}
-                className="pl-9 h-9 bg-background"
+                className={cn(
+                  "pl-9 h-9 bg-background",
+                  companySearch.trim() !== "" && "border-primary ring-1 ring-primary/40"
+                )}
               />
             </div>
             <div className="relative flex-1 min-w-0">
@@ -1521,7 +1876,10 @@ const Index = () => {
                 placeholder="Search warm connections..."
                 value={warmConnectionSearch}
                 onChange={(e) => setWarmConnectionSearch(e.target.value)}
-                className="pl-9 h-9 bg-background"
+                className={cn(
+                  "pl-9 h-9 bg-background",
+                  warmConnectionSearch.trim() !== "" && "border-primary ring-1 ring-primary/40"
+                )}
               />
             </div>
             <div className="relative flex-1 min-w-0">
@@ -1530,7 +1888,10 @@ const Index = () => {
                 placeholder="Search commodities..."
                 value={commoditySearch}
                 onChange={(e) => setCommoditySearch(e.target.value)}
-                className="pl-9 h-9 bg-background"
+                className={cn(
+                  "pl-9 h-9 bg-background",
+                  commoditySearch.trim() !== "" && "border-primary ring-1 ring-primary/40"
+                )}
               />
             </div>
           </div>
@@ -1540,7 +1901,12 @@ const Index = () => {
               value={statusFilter}
               onValueChange={(value) => setStatusFilter(value as LeadStatus | "all")}
             >
-              <SelectTrigger className="flex-1 min-w-[150px] sm:min-w-[160px] h-9">
+              <SelectTrigger
+                className={cn(
+                  "flex-1 min-w-[150px] sm:min-w-[160px] h-9",
+                  statusFilter !== "all" && "border-primary ring-1 ring-primary/40"
+                )}
+              >
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -1556,7 +1922,12 @@ const Index = () => {
               value={tierFilter}
               onValueChange={(value) => setTierFilter(value as LeadTier | "all")}
             >
-              <SelectTrigger className="flex-1 min-w-[130px] sm:min-w-[140px] h-9">
+              <SelectTrigger
+                className={cn(
+                  "flex-1 min-w-[130px] sm:min-w-[140px] h-9",
+                  tierFilter !== "all" && "border-primary ring-1 ring-primary/40"
+                )}
+              >
                 <SelectValue placeholder="Filter by tier" />
               </SelectTrigger>
               <SelectContent>
@@ -1570,7 +1941,12 @@ const Index = () => {
               value={companySizeFilter}
               onValueChange={(value) => setCompanySizeFilter(value)}
             >
-              <SelectTrigger className="flex-1 min-w-[160px] sm:min-w-[170px] h-9">
+              <SelectTrigger
+                className={cn(
+                  "flex-1 min-w-[160px] sm:min-w-[170px] h-9",
+                  companySizeFilter !== "all" && "border-primary ring-1 ring-primary/40"
+                )}
+              >
                 <SelectValue placeholder="Filter by company size" />
               </SelectTrigger>
               <SelectContent>
@@ -1586,7 +1962,12 @@ const Index = () => {
               value={marketCapFilter}
               onValueChange={(value) => setMarketCapFilter(value)}
             >
-              <SelectTrigger className="flex-1 min-w-[160px] sm:min-w-[170px] h-9">
+              <SelectTrigger
+                className={cn(
+                  "flex-1 min-w-[160px] sm:min-w-[170px] h-9",
+                  marketCapFilter !== "all" && "border-primary ring-1 ring-primary/40"
+                )}
+              >
                 <SelectValue placeholder="Filter by market cap" />
               </SelectTrigger>
               <SelectContent>
@@ -1604,7 +1985,12 @@ const Index = () => {
               value={feedbackFilter}
               onValueChange={(value) => setFeedbackFilter(value as "all" | "good" | "bad")}
             >
-              <SelectTrigger className="flex-1 min-w-[140px] sm:min-w-[150px] h-9">
+              <SelectTrigger
+                className={cn(
+                  "flex-1 min-w-[140px] sm:min-w-[150px] h-9",
+                  feedbackFilter !== "all" && "border-primary ring-1 ring-primary/40"
+                )}
+              >
                 <SelectValue placeholder="Filter by feedback" />
               </SelectTrigger>
               <SelectContent>
@@ -1622,7 +2008,12 @@ const Index = () => {
                 }
               }}
             >
-              <SelectTrigger className="flex-1 min-w-[160px] sm:min-w-[170px] h-9">
+              <SelectTrigger
+                className={cn(
+                  "flex-1 min-w-[160px] sm:min-w-[170px] h-9",
+                  commentFilter !== "all" && "border-primary ring-1 ring-primary/40"
+                )}
+              >
                 <SelectValue placeholder="Filter by comments" />
               </SelectTrigger>
               <SelectContent>
@@ -1639,7 +2030,10 @@ const Index = () => {
                   type="date"
                   value={editDateFilter}
                   onChange={(e) => setEditDateFilter(e.target.value)}
-                  className="h-9 min-w-[140px]"
+                  className={cn(
+                    "h-9 min-w-[140px]",
+                    editDateFilter !== "" && "border-primary ring-1 ring-primary/40"
+                  )}
                 />
               </div>
             )}
@@ -1855,6 +2249,10 @@ const Index = () => {
           onOpenChange={setExportDialogOpen}
           allLeads={leads}
           filteredLeads={filteredLeads}
+          fetchAllLeads={fetchAllLeadsForExport}
+          fetchFilteredLeads={fetchFilteredLeadsForExport}
+          allLeadsCount={totalLeads}
+          filteredLeadsCount={totalFilteredLeads}
         />
       </main>
     </div>

@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Loader2, User, Mail, Calendar, Building2, Eye, Download, Save, Upload, Plus } from "lucide-react";
+import { ArrowLeft, Loader2, User, Mail, Calendar, Building2, Eye, Download, Save, Upload, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -77,6 +77,7 @@ const AdminTenantDetail = () => {
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
   const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
   const [unassignedUsers, setUnassignedUsers] = useState<Array<{
     id: string;
     email: string | null;
@@ -224,6 +225,10 @@ const AdminTenantDetail = () => {
           tierReason: lead.tier_reason,
           warmConnections: lead.warm_connections,
           isConnectedToTenant: lead.is_connected_to_tenant,
+          followsOnLinkedin: lead.follows_on_linkedin,
+          marketCapitalisation: lead.market_capitalisation,
+          companySizeInterval: lead.company_size_interval,
+          commodityFields: lead.commodity_fields,
           comments: leadComments,
           createdAt: new Date(lead.created_at || ""),
           updatedAt: new Date(lead.updated_at || ""),
@@ -791,6 +796,118 @@ const AdminTenantDetail = () => {
     }
   };
 
+  const createPrivateTenantForUser = async (email: string | null, userId: string) => {
+    const identifier = (email || userId).toLowerCase();
+
+    // Convert identifier to slug-safe base similar to backend logic
+    let emailSlug = identifier.replace("@", "_").replace(/\./g, "_");
+    emailSlug = Array.from(emailSlug)
+      .map((c) => (/[a-z0-9_]/.test(c) ? c : "_"))
+      .join("");
+    emailSlug = emailSlug
+      .split("_")
+      .filter(Boolean)
+      .join("_");
+
+    const baseSlug = `${emailSlug}_privateTenant`;
+    let tenantSlug = baseSlug;
+    let counter = 0;
+
+    // Ensure slug uniqueness
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { data, error } = await supabase
+        .from(Tables.TENANTS)
+        .select("id")
+        .eq("slug", tenantSlug)
+        .maybeSingle();
+
+      if (error && (error as any).code !== "PGRST116") {
+        throw error;
+      }
+
+      if (!data) {
+        break;
+      }
+
+      counter += 1;
+      tenantSlug = `${baseSlug}_${counter}`;
+    }
+
+    const tenantName = email
+      ? `${email} (Private Tenant)`
+      : `Private Tenant for user ${userId}`;
+
+    const { data: newTenant, error: insertError } = await supabase
+      .from(Tables.TENANTS)
+      .insert({
+        name: tenantName,
+        slug: tenantSlug,
+        domain: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+
+    if (insertError || !newTenant) {
+      throw insertError || new Error("Failed to create private tenant");
+    }
+
+    return newTenant.id as string;
+  };
+
+  const handleRemoveUser = async (userId: string, email: string | null) => {
+    if (!tenantId) {
+      toast.error("Tenant ID not found");
+      return;
+    }
+
+    const label = email || "this user";
+    const confirmed = window.confirm(
+      `Remove ${label} from this tenant?\n\nThey will be moved to their own private tenant and will no longer see this tenant's leads.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setRemovingUserId(userId);
+    try {
+      // Create a private tenant for this user and move them there
+      const newTenantId = await createPrivateTenantForUser(email, userId);
+
+      const { error: updateError } = await supabase
+        .from(Tables.USER_PROFILES)
+        .update({
+          tenant_id: newTenantId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", userId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      // Remove user from current tenant's user list
+      setTenantDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              users: prev.users.filter((u) => u.id !== userId),
+            }
+          : prev
+      );
+
+      toast.success("User removed from tenant");
+    } catch (error: any) {
+      console.error("Error removing user from tenant:", error);
+      toast.error(error?.message || "Failed to remove user from tenant");
+    } finally {
+      setRemovingUserId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
@@ -1336,7 +1453,7 @@ const AdminTenantDetail = () => {
                 <div className="space-y-4">
                   {tenantDetail.users.map((user) => (
                     <div key={user.id} className="space-y-2">
-                      <div className="flex items-start gap-3">
+                      <div className="flex items-start gap-3 justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <User className="h-4 w-4 text-muted-foreground" />
@@ -1356,6 +1473,24 @@ const AdminTenantDetail = () => {
                             Joined {formatDate(user.created_at)}
                           </div>
                         </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRemoveUser(user.id, user.email)}
+                          disabled={removingUserId === user.id}
+                        >
+                          {removingUserId === user.id ? (
+                            <>
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              Removing
+                            </>
+                          ) : (
+                            <>
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              Remove
+                            </>
+                          )}
+                        </Button>
                       </div>
                       <Separator />
                     </div>

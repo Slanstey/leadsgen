@@ -119,10 +119,17 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment,
     (showLastModified ? 1 : 0) +
     (hasActions ? 1 : 0) || 1;
 
-  // Helper function to get the last comment date
-  const getLastCommentDate = (lead: Lead): Date | null => {
+  // Helper function to get the last modified date for a lead
+  // This uses the lead's updatedAt timestamp (which is updated on status
+  // changes and comment changes) and falls back to the last comment date
+  // if for some reason updatedAt is not available.
+  const getLastModifiedDate = (lead: Lead): Date | null => {
+    if (lead.updatedAt) {
+      return lead.updatedAt;
+    }
+
     if (lead.comments.length === 0) return null;
-    return new Date(Math.max(...lead.comments.map(c => c.createdAt.getTime())));
+    return new Date(Math.max(...lead.comments.map((c) => c.createdAt.getTime())));
   };
 
   const isNewLead = (lead: Lead): boolean => {
@@ -560,12 +567,12 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment,
                   {showLastModified && (
                     <TableCell className="py-5 px-4 w-[140px]">
                       {(() => {
-                        const lastCommentDate = getLastCommentDate(lead);
-                        if (!lastCommentDate) {
+                        const lastModifiedDate = getLastModifiedDate(lead);
+                        if (!lastModifiedDate) {
                           return <span className="text-xs text-muted-foreground/50 italic">-</span>;
                         }
                         const now = new Date();
-                        const diffMs = now.getTime() - lastCommentDate.getTime();
+                        const diffMs = now.getTime() - lastModifiedDate.getTime();
                         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
                         let displayText: string;
@@ -582,11 +589,11 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment,
                         } else if (diffDays < 7) {
                           displayText = `${diffDays}d ago`;
                         } else {
-                          displayText = lastCommentDate.toLocaleDateString();
+                          displayText = lastModifiedDate.toLocaleDateString();
                         }
 
                         return (
-                          <span className="text-xs text-muted-foreground" title={lastCommentDate.toLocaleString()}>
+                          <span className="text-xs text-muted-foreground" title={lastModifiedDate.toLocaleString()}>
                             {displayText}
                           </span>
                         );
