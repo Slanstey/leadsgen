@@ -706,7 +706,12 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment,
                                       <p className="text-sm leading-relaxed text-foreground">{comment.text}</p>
                                       <div className="flex items-center justify-between mt-2">
                                         <p className="text-xs text-muted-foreground">
-                                          {comment.author} • {new Date(comment.createdAt).toLocaleDateString()}
+                                          {(() => {
+                                            const createdAt = new Date(comment.createdAt);
+                                            const date = createdAt.toLocaleDateString();
+                                            const time = createdAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                                            return `${comment.author} • ${date} ${time}`;
+                                          })()}
                                         </p>
                                         {isCommentAuthor && (onEditComment || onDeleteComment) && (
                                           <div className="flex gap-2">
