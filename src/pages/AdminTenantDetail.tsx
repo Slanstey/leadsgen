@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Loader2, User, Mail, Calendar, Building2, Eye, Download, Save, Upload } from "lucide-react";
+import { ArrowLeft, Loader2, User, Mail, Calendar, Building2, Eye, Download, Save, Upload, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,6 +24,14 @@ import { Lead, LeadStatus, LeadTier } from "@/types/lead";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FieldVisibilityConfig, defaultFieldVisibility, LeadFieldKey } from "@/types/tenantPreferences";
 import { Tables } from "@/lib/supabaseUtils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Pagination,
   PaginationContent,
@@ -68,6 +76,17 @@ const AdminTenantDetail = () => {
   const [csvUploadOpen, setCsvUploadOpen] = useState(false);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
+  const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
+  const [unassignedUsers, setUnassignedUsers] = useState<Array<{
+    id: string;
+    email: string | null;
+    full_name: string | null;
+    role: string | null;
+    created_at: string;
+  }>>([]);
+  const [loadingUnassignedUsers, setLoadingUnassignedUsers] = useState(false);
+  const [assigningUser, setAssigningUser] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -664,12 +683,12 @@ const AdminTenantDetail = () => {
       setTenantDetail((prev) =>
         prev
           ? {
-            ...prev,
-            preferences: {
-              ...(prev.preferences || {}),
-              field_visibility: newVisibility,
-            },
-          }
+              ...prev,
+              preferences: {
+                ...(prev.preferences || {}),
+                field_visibility: newVisibility,
+              },
+            }
           : prev
       );
     } catch (error: any) {
@@ -677,6 +696,98 @@ const AdminTenantDetail = () => {
       toast.error(error.message || "Failed to update field visibility");
       // Revert on error
       setFieldVisibility(fieldVisibility);
+    }
+  };
+
+  const fetchUnassignedUsers = async () => {
+    setLoadingUnassignedUsers(true);
+    try {
+      // First, get all tenants that are private tenants (domain is null or slug ends with _privateTenant)
+      // We need to query for tenants where domain is null OR slug ends with _privateTenant
+      const { data: privateTenantsWithNullDomain, error: nullDomainError } = await supabase
+        .from(Tables.TENANTS)
+        .select("id")
+        .is("domain", null);
+
+      const { data: privateTenantsWithSlug, error: slugError } = await supabase
+        .from(Tables.TENANTS)
+        .select("id")
+        .like("slug", "%_privateTenant");
+
+      if (nullDomainError || slugError) {
+        throw new Error(`Failed to fetch private tenants: ${nullDomainError?.message || slugError?.message}`);
+      }
+
+      // Combine both results and get unique tenant IDs
+      const allPrivateTenantIds = new Set<string>();
+      (privateTenantsWithNullDomain || []).forEach((t) => allPrivateTenantIds.add(t.id));
+      (privateTenantsWithSlug || []).forEach((t) => allPrivateTenantIds.add(t.id));
+
+      if (allPrivateTenantIds.size === 0) {
+        setUnassignedUsers([]);
+        return;
+      }
+
+      const privateTenantIds = Array.from(allPrivateTenantIds);
+
+      // Get all users assigned to these private tenants
+      const { data: usersData, error: usersError } = await supabase
+        .from(Tables.USER_PROFILES)
+        .select("id, email, full_name, role, created_at")
+        .in("tenant_id", privateTenantIds)
+        .order("created_at", { ascending: false });
+
+      if (usersError) {
+        throw new Error(`Failed to fetch unassigned users: ${usersError.message}`);
+      }
+
+      setUnassignedUsers(usersData || []);
+    } catch (error: any) {
+      console.error("Error fetching unassigned users:", error);
+      toast.error(error.message || "Failed to fetch unassigned users");
+      setUnassignedUsers([]);
+    } finally {
+      setLoadingUnassignedUsers(false);
+    }
+  };
+
+  const handleAddUserDialogOpen = (open: boolean) => {
+    setAddUserDialogOpen(open);
+    if (open) {
+      fetchUnassignedUsers();
+      setSelectedUserId("");
+    }
+  };
+
+  const handleAssignUser = async () => {
+    if (!tenantId || !selectedUserId) {
+      toast.error("Please select a user to assign");
+      return;
+    }
+
+    setAssigningUser(true);
+    try {
+      // Update user's tenant_id
+      const { error } = await supabase
+        .from(Tables.USER_PROFILES)
+        .update({ tenant_id: tenantId })
+        .eq("id", selectedUserId);
+
+      if (error) {
+        throw new Error(`Failed to assign user: ${error.message}`);
+      }
+
+      toast.success("User assigned successfully");
+      setAddUserDialogOpen(false);
+      setSelectedUserId("");
+
+      // Reload tenant detail to refresh users list
+      await loadTenantDetail();
+    } catch (error: any) {
+      console.error("Error assigning user:", error);
+      toast.error(error.message || "Failed to assign user");
+    } finally {
+      setAssigningUser(false);
     }
   };
 
@@ -1203,8 +1314,20 @@ const AdminTenantDetail = () => {
           {/* Users */}
           <Card className="lg:col-span-2">
             <CardHeader>
-              <CardTitle>Users</CardTitle>
-              <CardDescription>{tenantDetail.users.length} {tenantDetail.users.length === 1 ? 'user' : 'users'} in this tenant</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Users</CardTitle>
+                  <CardDescription>{tenantDetail.users.length} {tenantDetail.users.length === 1 ? 'user' : 'users'} in this tenant</CardDescription>
+                </div>
+                <Button
+                  onClick={() => handleAddUserDialogOpen(true)}
+                  size="sm"
+                  variant="outline"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add User
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {tenantDetail.users.length === 0 ? (
@@ -1463,6 +1586,94 @@ const AdminTenantDetail = () => {
             }
           }}
         />
+
+        {/* Add User Dialog */}
+        <Dialog open={addUserDialogOpen} onOpenChange={handleAddUserDialogOpen}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>Add User to Tenant</DialogTitle>
+              <DialogDescription>
+                Select an unassigned user to add to this tenant. Unassigned users are those who signed up but their domain did not auto-match a tenant.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {loadingUnassignedUsers ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : unassignedUsers.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">
+                  No unassigned users found. All users have been assigned to tenants.
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                  {unassignedUsers.map((user) => (
+                    <div
+                      key={user.id}
+                      onClick={() => setSelectedUserId(user.id)}
+                      className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                        selectedUserId === user.id
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:bg-muted/50"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            <p className="font-medium">{user.full_name || 'No name'}</p>
+                            {user.role && (
+                              <span className="text-xs px-2 py-1 bg-muted rounded">{user.role}</span>
+                            )}
+                          </div>
+                          {user.email && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Mail className="h-3 w-3" />
+                              {user.email}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                            <Calendar className="h-3 w-3" />
+                            Joined {formatDate(user.created_at)}
+                          </div>
+                        </div>
+                        {selectedUserId === user.id && (
+                          <div className="flex-shrink-0">
+                            <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
+                              <div className="h-2 w-2 rounded-full bg-primary-foreground" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => handleAddUserDialogOpen(false)}
+                disabled={assigningUser}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAssignUser}
+                disabled={!selectedUserId || assigningUser || unassignedUsers.length === 0}
+              >
+                {assigningUser ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  "Assign User"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
