@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { BarChart3, Settings, Search, Menu, Home, LogOut, Download, Loader2 } from "lucide-react";
+import { BarChart3, Settings, Search, Menu, Home, LogOut, Download, Loader2, Activity, ChevronDown, ChevronUp, X } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,6 +19,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ExportDialog } from "@/components/ExportDialog";
 import { FieldVisibilityConfig, defaultFieldVisibility } from "@/types/tenantPreferences";
 import { Tables } from "@/lib/supabaseUtils";
+import { logActivity } from "@/lib/activityLogger";
+import { ActivityLog } from "@/components/ActivityLog";
 import {
   Pagination,
   PaginationContent,
@@ -85,8 +87,10 @@ const Index = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
   const [companySearch, setCompanySearch] = useState("");
+  const [contactPersonSearch, setContactPersonSearch] = useState("");
   const [warmConnectionSearch, setWarmConnectionSearch] = useState("");
   const [commoditySearch, setCommoditySearch] = useState("");
+  const [roleSearch, setRoleSearch] = useState("");
   const [tierFilter, setTierFilter] = useState<LeadTier | "all">("all");
   const [companySizeFilter, setCompanySizeFilter] = useState<string>("all");
   const [marketCapFilter, setMarketCapFilter] = useState<string>("all");
@@ -99,12 +103,14 @@ const Index = () => {
   const [error, setError] = useState<string | null>(null);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [fieldVisibility, setFieldVisibility] = useState<FieldVisibilityConfig>(defaultFieldVisibility);
+  const [showActivityLog, setShowActivityLog] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50); // Default 50 leads per page
   const [totalLeads, setTotalLeads] = useState(0);
   const [totalFilteredLeads, setTotalFilteredLeads] = useState(0);
+  const [ignoredCount, setIgnoredCount] = useState(0);
 
   // Sorting state
   type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "followsOnLinkedin" | "createdAt" | "marketCapitalisation" | "companySizeInterval" | "lastCommentDate" | null;
@@ -210,6 +216,11 @@ const Index = () => {
         countQuery = countQuery.ilike("company_name", `${companySearch.trim()}%`);
       }
 
+      // Apply contact person search filter (if provided)
+      if (contactPersonSearch.trim()) {
+        countQuery = countQuery.ilike("contact_person", `${contactPersonSearch.trim()}%`);
+      }
+
       // Apply warm connection search filter (if provided)
       if (warmConnectionSearch.trim()) {
         countQuery = countQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
@@ -218,6 +229,11 @@ const Index = () => {
       // Apply commodity search filter (if provided)
       if (commoditySearch.trim()) {
         countQuery = countQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+      }
+
+      // Apply role search filter (if provided)
+      if (roleSearch.trim()) {
+        countQuery = countQuery.ilike("role", `${roleSearch.trim()}%`);
       }
 
       // Apply tier filter
@@ -252,7 +268,80 @@ const Index = () => {
       console.error("Error fetching total count:", error);
       return 0;
     }
-  }, [profile?.tenant_id, statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter]);
+  }, [profile?.tenant_id, statusFilter, companySearch, warmConnectionSearch, commoditySearch, roleSearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter]);
+
+  // Fetch ignored count for display
+  const fetchIgnoredCount = useCallback(async () => {
+    if (!profile?.tenant_id) {
+      setIgnoredCount(0);
+      return;
+    }
+
+    try {
+      let countQuery = supabase
+        .from(Tables.LEADS)
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", profile.tenant_id)
+        .eq("status", "ignored");
+
+      // Apply company search filter (if provided)
+      if (companySearch.trim()) {
+        countQuery = countQuery.ilike("company_name", `${companySearch.trim()}%`);
+      }
+
+      // Apply contact person search filter (if provided)
+      if (contactPersonSearch.trim()) {
+        countQuery = countQuery.ilike("contact_person", `${contactPersonSearch.trim()}%`);
+      }
+
+      // Apply warm connection search filter (if provided)
+      if (warmConnectionSearch.trim()) {
+        countQuery = countQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
+      }
+
+      // Apply commodity search filter (if provided)
+      if (commoditySearch.trim()) {
+        countQuery = countQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+      }
+
+      // Apply role search filter (if provided)
+      if (roleSearch.trim()) {
+        countQuery = countQuery.ilike("role", `${roleSearch.trim()}%`);
+      }
+
+      // Apply tier filter
+      if (tierFilter !== "all") {
+        countQuery = countQuery.eq("tier", tierFilter);
+      }
+
+      // Apply company size filter
+      if (companySizeFilter !== "all") {
+        countQuery = countQuery.eq("company_size_interval", companySizeFilter);
+      }
+
+      // Apply market cap filter
+      if (marketCapFilter !== "all") {
+        if (marketCapFilter === "unknown") {
+          countQuery = countQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+        } else {
+          countQuery = countQuery.ilike("market_capitalisation", `%${marketCapFilter}%`);
+        }
+      }
+
+      const { count, error } = await countQuery;
+
+      if (error) {
+        console.error("Ignored count fetch error:", error);
+        setIgnoredCount(0);
+        return;
+      }
+
+      setIgnoredCount(count || 0);
+    } catch (error) {
+      console.error("Error fetching ignored count:", error);
+      setIgnoredCount(0);
+    }
+  }, [profile?.tenant_id, companySearch, warmConnectionSearch, commoditySearch, roleSearch, tierFilter, companySizeFilter, marketCapFilter]);
 
   // Fetch leads from database with pagination - matching AdminTenantDetail pattern
   const fetchLeads = useCallback(async () => {
@@ -275,8 +364,10 @@ const Index = () => {
       }
 
       // Check if we need client-side filtering (feedback or comment filters)
+      // Also need client-side processing when sorting by lastCommentDate (last modified)
       const needsClientSideFiltering = feedbackFilter !== "all" || commentFilter !== "all" ||
-        (marketCapFilter !== "all" && marketCapFilter !== "unknown");
+        (marketCapFilter !== "all" && marketCapFilter !== "unknown") ||
+        (sortColumn === "lastCommentDate" && sortDirection !== null);
 
       // Fetch total count first (matching AdminTenantDetail pattern)
       const total = await fetchTotalCount();
@@ -303,6 +394,9 @@ const Index = () => {
 
         if (companySearch.trim()) {
           allLeadsQuery = allLeadsQuery.ilike("company_name", `${companySearch.trim()}%`);
+        }
+        if (contactPersonSearch.trim()) {
+          allLeadsQuery = allLeadsQuery.ilike("contact_person", `${contactPersonSearch.trim()}%`);
         }
         if (warmConnectionSearch.trim()) {
           allLeadsQuery = allLeadsQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
@@ -571,6 +665,11 @@ const Index = () => {
         leadsQuery = leadsQuery.ilike("company_name", `${companySearch.trim()}%`);
       }
 
+      // Apply contact person search filter (if provided)
+      if (contactPersonSearch.trim()) {
+        leadsQuery = leadsQuery.ilike("contact_person", `${contactPersonSearch.trim()}%`);
+      }
+
       // Apply warm connection search filter (if provided)
       if (warmConnectionSearch.trim()) {
         leadsQuery = leadsQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
@@ -579,6 +678,11 @@ const Index = () => {
       // Apply commodity search filter (if provided)
       if (commoditySearch.trim()) {
         leadsQuery = leadsQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+      }
+
+      // Apply role search filter (if provided)
+      if (roleSearch.trim()) {
+        leadsQuery = leadsQuery.ilike("role", `${roleSearch.trim()}%`);
       }
 
       // Apply tier filter
@@ -790,7 +894,7 @@ const Index = () => {
     } finally {
       setLoading(false);
     }
-  }, [profile?.tenant_id, profile?.id, currentPage, pageSize, statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter, feedbackFilter, commentFilter, editDateFilter, editDateFilterType, sortColumn, sortDirection, fetchTotalCount]);
+  }, [profile?.tenant_id, profile?.id, currentPage, pageSize, statusFilter, companySearch, contactPersonSearch, warmConnectionSearch, commoditySearch, roleSearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter, feedbackFilter, commentFilter, editDateFilter, editDateFilterType, sortColumn, sortDirection, fetchTotalCount]);
 
   // Fetch total count (all leads) for stats
   const fetchAllLeadsCount = useCallback(async () => {
@@ -884,11 +988,17 @@ const Index = () => {
         if (companySearch.trim()) {
           allLeadsQuery = allLeadsQuery.ilike("company_name", `${companySearch.trim()}%`);
         }
+        if (contactPersonSearch.trim()) {
+          allLeadsQuery = allLeadsQuery.ilike("contact_person", `${contactPersonSearch.trim()}%`);
+        }
         if (warmConnectionSearch.trim()) {
           allLeadsQuery = allLeadsQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
         }
         if (commoditySearch.trim()) {
           allLeadsQuery = allLeadsQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+        }
+        if (roleSearch.trim()) {
+          allLeadsQuery = allLeadsQuery.ilike("role", `${roleSearch.trim()}%`);
         }
         if (tierFilter !== "all") {
           allLeadsQuery = allLeadsQuery.eq("tier", tierFilter);
@@ -1026,11 +1136,17 @@ const Index = () => {
         if (companySearch.trim()) {
           baseQuery = baseQuery.ilike("company_name", `${companySearch.trim()}%`);
         }
+        if (contactPersonSearch.trim()) {
+          baseQuery = baseQuery.ilike("contact_person", `${contactPersonSearch.trim()}%`);
+        }
         if (warmConnectionSearch.trim()) {
           baseQuery = baseQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
         }
         if (commoditySearch.trim()) {
           baseQuery = baseQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+        }
+        if (roleSearch.trim()) {
+          baseQuery = baseQuery.ilike("role", `${roleSearch.trim()}%`);
         }
         if (tierFilter !== "all") {
           baseQuery = baseQuery.eq("tier", tierFilter);
@@ -1062,11 +1178,17 @@ const Index = () => {
           if (companySearch.trim()) {
             query = query.ilike("company_name", `${companySearch.trim()}%`);
           }
+          if (contactPersonSearch.trim()) {
+            query = query.ilike("contact_person", `${contactPersonSearch.trim()}%`);
+          }
           if (warmConnectionSearch.trim()) {
             query = query.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
           }
           if (commoditySearch.trim()) {
             query = query.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+          }
+          if (roleSearch.trim()) {
+            query = query.ilike("role", `${roleSearch.trim()}%`);
           }
           if (tierFilter !== "all") {
             query = query.eq("tier", tierFilter);
@@ -1099,15 +1221,16 @@ const Index = () => {
     } catch (error) {
       console.error("Error fetching filtered status counts:", error);
     }
-  }, [profile?.tenant_id, companySearch, warmConnectionSearch, commoditySearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter, feedbackFilter, commentFilter, editDateFilter]);
+  }, [profile?.tenant_id, statusFilter, companySearch, warmConnectionSearch, commoditySearch, roleSearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter, feedbackFilter, commentFilter, editDateFilter]);
 
   // Reset to page 1 when filters or sort change and refetch filtered status counts
   useEffect(() => {
     setCurrentPage(1);
     if (profile?.tenant_id) {
       fetchFilteredStatusCounts();
+      fetchIgnoredCount();
     }
-  }, [statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, feedbackFilter, commentFilter, editDateFilter, editDateFilterType, sortColumn, sortDirection, profile?.tenant_id, fetchFilteredStatusCounts]);
+  }, [statusFilter, companySearch, contactPersonSearch, warmConnectionSearch, commoditySearch, roleSearch, showIgnored, feedbackFilter, commentFilter, editDateFilter, editDateFilterType, sortColumn, sortDirection, profile?.tenant_id, fetchFilteredStatusCounts, fetchIgnoredCount]);
 
   useEffect(() => {
     // Fetch leads for user's tenant (all users have tenant_id now)
@@ -1117,11 +1240,12 @@ const Index = () => {
       fetchAllLeadsCount();
       fetchUnfilteredStatusCounts();
       fetchFilteredStatusCounts();
+      fetchIgnoredCount();
     } else {
       setLeads([]);
       setLoading(false);
     }
-  }, [profile?.tenant_id, fetchFieldVisibility, fetchLeads, fetchAllLeadsCount, fetchUnfilteredStatusCounts, fetchFilteredStatusCounts]);
+  }, [profile?.tenant_id, fetchFieldVisibility, fetchLeads, fetchAllLeadsCount, fetchUnfilteredStatusCounts, fetchFilteredStatusCounts, fetchIgnoredCount]);
 
   // Refetch when navigating back to this page
   useEffect(() => {
@@ -1139,13 +1263,39 @@ const Index = () => {
   }, [location.pathname, profile?.tenant_id, fetchFieldVisibility, fetchLeads, fetchAllLeadsCount, fetchUnfilteredStatusCounts, fetchFilteredStatusCounts]);
 
   const handleStatusChange = async (leadId: string, newStatus: LeadStatus) => {
+    if (!profile?.id || !profile?.tenant_id) {
+      toast.error("Unable to update status: user not found");
+      return;
+    }
+
     try {
+      const lead = leads.find((l) => l.id === leadId);
+      if (!lead) {
+        toast.error("Lead not found");
+        return;
+      }
+
+      const oldStatus = lead.status;
+
       const { error } = await supabase
         .from(Tables.LEADS)
         .update({ status: newStatus as any, updated_at: new Date().toISOString() })
         .eq("id", leadId);
 
       if (error) throw error;
+
+      // Log activity
+      await logActivity({
+        leadId,
+        lead,
+        actionType: "status_changed",
+        userId: profile.id,
+        tenantId: profile.tenant_id,
+        metadata: {
+          oldStatus,
+          newStatus,
+        },
+      });
 
       // If status changed to "ignored" and showIgnored is false, remove from view
       // Otherwise update local state
@@ -1197,13 +1347,37 @@ const Index = () => {
     }
   };
 
-  const handleAddComment = async (leadId: string, commentText: string) => {
-    if (!profile?.tenant_id) {
+  const clearAllFilters = () => {
+    setCompanySearch("");
+    setContactPersonSearch("");
+    setWarmConnectionSearch("");
+    setCommoditySearch("");
+    setRoleSearch("");
+    setStatusFilter("all");
+    setTierFilter("all");
+    setCompanySizeFilter("all");
+    setMarketCapFilter("all");
+    setShowIgnored(false);
+    setFeedbackFilter("all");
+    setCommentFilter("all");
+    setEditDateFilter("");
+    setEditDateFilterType("on");
+    toast.success("All filters cleared");
+  };
+
+  const handleAddComment = async (leadId: string, commentText: string, skipActivityLog = false) => {
+    if (!profile?.tenant_id || !profile?.id) {
       toast.error("Unable to add comment: tenant not found");
       return;
     }
 
     try {
+      const lead = leads.find((l) => l.id === leadId);
+      if (!lead) {
+        toast.error("Lead not found");
+        return;
+      }
+
       const { data, error } = await supabase
         .from(Tables.COMMENTS)
         .insert({
@@ -1244,6 +1418,17 @@ const Index = () => {
         .update({ updated_at: new Date().toISOString() })
         .eq("id", leadId);
 
+      // Log activity (unless skipped)
+      if (!skipActivityLog) {
+        await logActivity({
+          leadId,
+          lead,
+          actionType: "comment_added",
+          userId: profile.id,
+          tenantId: profile.tenant_id,
+        });
+      }
+
       toast.success("Comment added successfully");
     } catch (error) {
       console.error("Error adding comment:", error);
@@ -1252,7 +1437,7 @@ const Index = () => {
   };
 
   const handleEditComment = async (commentId: string, newText: string) => {
-    if (!profile?.tenant_id) {
+    if (!profile?.tenant_id || !profile?.id) {
       toast.error("Unable to edit comment: tenant not found");
       return;
     }
@@ -1267,6 +1452,10 @@ const Index = () => {
       if (error) throw error;
 
       // Find the lead that contains this comment and update it
+      const leadWithComment = leads.find((lead) =>
+        lead.comments.some((c) => c.id === commentId)
+      );
+
       setLeads((prevLeads) =>
         prevLeads.map((lead) => {
           const commentIndex = lead.comments.findIndex((c) => c.id === commentId);
@@ -1287,14 +1476,20 @@ const Index = () => {
       );
 
       // Update lead's updated_at timestamp
-      const leadWithComment = leads.find((lead) =>
-        lead.comments.some((c) => c.id === commentId)
-      );
       if (leadWithComment) {
         await supabase
           .from(Tables.LEADS)
           .update({ updated_at: new Date().toISOString() })
           .eq("id", leadWithComment.id);
+
+        // Log activity
+        await logActivity({
+          leadId: leadWithComment.id,
+          lead: leadWithComment,
+          actionType: "comment_edited",
+          userId: profile.id,
+          tenantId: profile.tenant_id,
+        });
       }
 
       toast.success("Comment updated successfully");
@@ -1305,7 +1500,7 @@ const Index = () => {
   };
 
   const handleDeleteComment = async (commentId: string) => {
-    if (!profile?.tenant_id) {
+    if (!profile?.tenant_id || !profile?.id) {
       toast.error("Unable to delete comment: tenant not found");
       return;
     }
@@ -1344,6 +1539,15 @@ const Index = () => {
           .from(Tables.LEADS)
           .update({ updated_at: new Date().toISOString() })
           .eq("id", leadWithComment.id);
+
+        // Log activity
+        await logActivity({
+          leadId: leadWithComment.id,
+          lead: leadWithComment,
+          actionType: "comment_deleted",
+          userId: profile.id,
+          tenantId: profile.tenant_id,
+        });
       }
 
       toast.success("Comment deleted successfully");
@@ -1362,8 +1566,10 @@ const Index = () => {
   const hasActiveFilters = useMemo(() => {
     return (
       companySearch.trim() !== "" ||
+      contactPersonSearch.trim() !== "" ||
       warmConnectionSearch.trim() !== "" ||
       commoditySearch.trim() !== "" ||
+      roleSearch.trim() !== "" ||
       statusFilter !== "all" ||
       tierFilter !== "all" ||
       companySizeFilter !== "all" ||
@@ -1374,7 +1580,7 @@ const Index = () => {
       (commentFilter === "edited_after" && editDateFilter !== "") ||
       showIgnored === true
     );
-  }, [companySearch, warmConnectionSearch, commoditySearch, statusFilter, tierFilter, companySizeFilter, marketCapFilter, feedbackFilter, commentFilter, editDateFilter, showIgnored]);
+  }, [companySearch, contactPersonSearch, warmConnectionSearch, commoditySearch, roleSearch, statusFilter, tierFilter, companySizeFilter, marketCapFilter, feedbackFilter, commentFilter, editDateFilter, showIgnored]);
 
   // Calculate pagination info
   const totalPages = Math.ceil(totalFilteredLeads / pageSize);
@@ -1519,11 +1725,17 @@ const Index = () => {
       if (companySearch.trim()) {
         allLeadsQuery = allLeadsQuery.ilike("company_name", `${companySearch.trim()}%`);
       }
+      if (contactPersonSearch.trim()) {
+        allLeadsQuery = allLeadsQuery.ilike("contact_person", `${contactPersonSearch.trim()}%`);
+      }
       if (warmConnectionSearch.trim()) {
         allLeadsQuery = allLeadsQuery.ilike("warm_connections", `${warmConnectionSearch.trim()}%`);
       }
       if (commoditySearch.trim()) {
         allLeadsQuery = allLeadsQuery.ilike("commodity_fields", `${commoditySearch.trim()}%`);
+      }
+      if (roleSearch.trim()) {
+        allLeadsQuery = allLeadsQuery.ilike("role", `${roleSearch.trim()}%`);
       }
       if (tierFilter !== "all") {
         allLeadsQuery = allLeadsQuery.eq("tier", tierFilter);
@@ -1750,7 +1962,7 @@ const Index = () => {
       console.error("Error fetching filtered leads for export:", error);
       throw error;
     }
-  }, [profile?.tenant_id, statusFilter, companySearch, warmConnectionSearch, commoditySearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter, feedbackFilter, commentFilter, editDateFilter, editDateFilterType, sortColumn, sortDirection]);
+  }, [profile?.tenant_id, statusFilter, companySearch, contactPersonSearch, warmConnectionSearch, commoditySearch, roleSearch, showIgnored, tierFilter, companySizeFilter, marketCapFilter, feedbackFilter, commentFilter, editDateFilter, editDateFilterType, sortColumn, sortDirection]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -1854,6 +2066,51 @@ const Index = () => {
           </div>
         </div>
 
+        {/* Activity Log Toggle Button and Clear Filters Button */}
+        <div className="mb-6 flex justify-center gap-3">
+          <Button
+            variant="outline"
+            onClick={() => setShowActivityLog(!showActivityLog)}
+            className={cn(
+              "gap-2 transition-all duration-200",
+              showActivityLog
+                ? "border-2 border-primary bg-primary/5 text-primary hover:bg-primary/10"
+                : ""
+            )}
+          >
+            <Activity className="h-4 w-4" />
+            {showActivityLog ? "Hide" : "Show"} Activity Log
+            {showActivityLog ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={clearAllFilters}
+            className="gap-2 transition-all duration-200"
+          >
+            <X className="h-4 w-4" />
+            Clear All Filters
+          </Button>
+        </div>
+
+        {/* Activity Log Section */}
+        {showActivityLog && (
+          <div className="mb-12">
+            <ActivityLog
+              limit={50}
+              isOpen={showActivityLog}
+              onActivityClick={(companyName, contactPerson) => {
+                setCompanySearch(companyName);
+                setContactPersonSearch(contactPerson);
+                setShowActivityLog(false);
+              }}
+            />
+          </div>
+        )}
+
         {/* Filters section */}
         <div className="mb-12 space-y-3 w-full">
           {/* Search filters row */}
@@ -1867,6 +2124,18 @@ const Index = () => {
                 className={cn(
                   "pl-9 h-9 bg-background",
                   companySearch.trim() !== "" && "border-primary ring-1 ring-primary/40"
+                )}
+              />
+            </div>
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search contact person..."
+                value={contactPersonSearch}
+                onChange={(e) => setContactPersonSearch(e.target.value)}
+                className={cn(
+                  "pl-9 h-9 bg-background",
+                  contactPersonSearch.trim() !== "" && "border-primary ring-1 ring-primary/40"
                 )}
               />
             </div>
@@ -1891,6 +2160,18 @@ const Index = () => {
                 className={cn(
                   "pl-9 h-9 bg-background",
                   commoditySearch.trim() !== "" && "border-primary ring-1 ring-primary/40"
+                )}
+              />
+            </div>
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search roles..."
+                value={roleSearch}
+                onChange={(e) => setRoleSearch(e.target.value)}
+                className={cn(
+                  "pl-9 h-9 bg-background",
+                  roleSearch.trim() !== "" && "border-primary ring-1 ring-primary/40"
                 )}
               />
             </div>
@@ -2057,12 +2338,12 @@ const Index = () => {
                 htmlFor="showIgnored"
                 className="text-sm font-normal cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
               >
-                Show ignored
+                Show ignored {ignoredCount > 0 && `(${ignoredCount})`}
               </Label>
             </div>
 
             {/* Showing X to X of Y leads */}
-            <div className="text-sm text-muted-foreground whitespace-nowrap">
+            <div className="text-sm text-muted-foreground whitespace-nowrap sm:ml-8">
               Showing {startIndex}-{endIndex} of {totalFilteredLeads} leads
             </div>
 
@@ -2229,19 +2510,17 @@ const Index = () => {
             </p>
           </div>
         ) : (
-          <>
-            <LeadsTable
-              leads={filteredLeads}
-              onStatusChange={handleStatusChange}
-              onAddComment={handleAddComment}
-              onEditComment={handleEditComment}
-              onDeleteComment={handleDeleteComment}
-              fieldVisibility={fieldVisibility}
-              sortColumn={sortColumn}
-              sortDirection={sortDirection}
-              onSort={handleSort}
-            />
-          </>
+          <LeadsTable
+            leads={filteredLeads}
+            onStatusChange={handleStatusChange}
+            onAddComment={handleAddComment}
+            onEditComment={handleEditComment}
+            onDeleteComment={handleDeleteComment}
+            fieldVisibility={fieldVisibility}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={handleSort}
+          />
         )}
 
         <ExportDialog

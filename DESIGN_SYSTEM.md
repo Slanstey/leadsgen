@@ -57,11 +57,15 @@ Choose distinctive, beautiful fonts. Avoid generic system fonts. Consider:
 - Fonts that match the brand personality
 
 ### Type Scale
-- **H1**: `2.5rem` (40px) - Page titles
-- **H2**: `2rem` (32px) - Section headers
-- **H3**: `1.5rem` (24px) - Subsection headers
-- **Body**: `1rem` (16px) - Default body text
-- **Small**: `0.875rem` (14px) - Secondary text
+**Optimized for older audiences with larger, more readable fonts:**
+- **H1**: `2.25rem` (45px) - Page titles
+- **H2**: `1.875rem` (37.5px) - Section headers
+- **H3**: `1.5rem` (30px) - Subsection headers
+- **H4**: `1.25rem` (25px) - Subsection headers
+- **Body**: `1.25rem` (20px) - Default body text (increased from 16px)
+- **Large**: `1.125rem` (22.5px) - Emphasized text
+- **Small**: `0.875rem` (17.5px) - Secondary text (minimum readable size)
+- **Extra Small**: `0.75rem` (15px) - Labels and metadata
 
 ### Font Weights
 - **Regular**: 400 - Body text

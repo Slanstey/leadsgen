@@ -31,4 +31,5 @@ export const Tables = {
   COMPANIES: getTableName('companies'),
   COMMENTS: getTableName('comments'),
   EXECUTIVES: getTableName('executives'),
+  ACTIVITY_LOGS: getTableName('activity_logs'),
 } as const;

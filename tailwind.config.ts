@@ -70,6 +70,18 @@ export default {
           ring: "hsl(var(--sidebar-ring))",
         },
       },
+      fontSize: {
+        // Scaled font sizes for better readability (base: 20px)
+        xs: ["0.75rem", { lineHeight: "1.5" }], // 15px
+        sm: ["0.875rem", { lineHeight: "1.6" }], // 17.5px
+        base: ["1rem", { lineHeight: "1.7" }], // 20px (matches body)
+        lg: ["1.125rem", { lineHeight: "1.7" }], // 22.5px
+        xl: ["1.25rem", { lineHeight: "1.7" }], // 25px
+        "2xl": ["1.5rem", { lineHeight: "1.6" }], // 30px
+        "3xl": ["1.875rem", { lineHeight: "1.5" }], // 37.5px
+        "4xl": ["2.25rem", { lineHeight: "1.4" }], // 45px
+        "5xl": ["3rem", { lineHeight: "1.3" }], // 60px
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",

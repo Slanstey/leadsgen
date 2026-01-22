@@ -17,6 +17,11 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { MessageSquare, X, Send, Mail, MapPin, Building2, ArrowUpDown, ArrowUp, ArrowDown, MessageSquareText, Link2, Edit2, Trash2 } from "lucide-react";
 import { TierBadge } from "@/components/TierBadge";
 import { toast } from "sonner";
@@ -25,6 +30,7 @@ import { FeedbackDialog } from "@/components/FeedbackDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { FieldVisibilityConfig, defaultFieldVisibility } from "@/types/tenantPreferences";
+import { logActivity } from "@/lib/activityLogger";
 
 type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "followsOnLinkedin" | "createdAt" | "marketCapitalisation" | "companySizeInterval" | "lastCommentDate" | null;
 type SortDirection = "asc" | "desc" | null;
@@ -77,7 +83,7 @@ const statusConfig: Record<
 interface LeadsTableProps {
   leads: Lead[];
   onStatusChange: (leadId: string, newStatus: LeadStatus) => void;
-  onAddComment: (leadId: string, comment: string) => void;
+  onAddComment: (leadId: string, comment: string, skipActivityLog?: boolean) => void;
   onEditComment?: (commentId: string, newText: string) => void;
   onDeleteComment?: (commentId: string) => void;
   fieldVisibility?: FieldVisibilityConfig;
@@ -164,14 +170,29 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment,
     setFeedbackDialogOpen(true);
   };
 
-  const handleFeedbackSubmit = (quality: "good" | "bad", reason: string) => {
-    if (!selectedLead) return;
+  const handleFeedbackSubmit = async (quality: "good" | "bad", reason: string) => {
+    if (!selectedLead || !profile?.id || !profile?.tenant_id) return;
 
     const userName = profile?.full_name || profile?.email || "Current User";
     const qualityText = quality === "good" ? "good" : "bad";
     const commentText = `Marked as ${qualityText} lead by ${userName}.\n\nReason: ${reason}`;
 
-    onAddComment(selectedLead.id, commentText);
+    // Add comment but skip activity log (we'll log feedback_given instead)
+    onAddComment(selectedLead.id, commentText, true);
+
+    // Log activity
+    await logActivity({
+      leadId: selectedLead.id,
+      lead: selectedLead,
+      actionType: "feedback_given",
+      userId: profile.id,
+      tenantId: profile.tenant_id,
+      metadata: {
+        quality,
+        reason,
+      },
+    });
+
     toast.success(`Lead marked as ${qualityText} quality`);
   };
 
@@ -415,8 +436,21 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment,
                   )}
                   */}
                   {visibility.role && (
-                    <TableCell className="py-5 px-4 min-w-[100px]">
-                      <span className="text-sm">{lead.role}</span>
+                    <TableCell className="py-5 px-4 min-w-[100px] max-w-[100px]">
+                      {lead.role ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="text-sm line-clamp-2 cursor-default overflow-hidden">
+                              {lead.role}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-[300px] break-words">
+                            <p>{lead.role}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <span className="text-sm text-muted-foreground/50 italic">-</span>
+                      )}
                     </TableCell>
                   )}
                   {visibility.tier && (
@@ -540,9 +574,18 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment,
                     </TableCell>
                   )}
                   {visibility.commodityFields && (
-                    <TableCell className="py-5 px-4 w-[130px]">
+                    <TableCell className="py-5 px-4 w-[130px] max-w-[130px]">
                       {lead.commodityFields ? (
-                        <span className="text-xs text-muted-foreground block line-clamp-2">{lead.commodityFields}</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="text-xs text-muted-foreground line-clamp-2 cursor-default overflow-hidden">
+                              {lead.commodityFields}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-[300px] break-words">
+                            <p>{lead.commodityFields}</p>
+                          </TooltipContent>
+                        </Tooltip>
                       ) : (
                         <span className="text-xs text-muted-foreground/50 italic">-</span>
                       )}
@@ -674,13 +717,13 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment,
                                 (comment.author === "Current User" && !profile?.full_name && !profile?.email);
 
                               return (
-                                <div key={comment.id} className="rounded-lg bg-card p-4 border border-border/50 shadow-soft">
+                                <div key={comment.id} className="rounded-lg bg-card p-4 border border-border/50 shadow-soft max-w-[70%]">
                                   {editingCommentId === comment.id ? (
                                     <div className="space-y-2">
                                       <Textarea
                                         value={editingCommentText}
                                         onChange={(e) => setEditingCommentText(e.target.value)}
-                                        className="min-h-[80px] bg-background resize-none"
+                                        className="min-h-[80px] bg-background resize-none max-w-full"
                                       />
                                       <div className="flex gap-2 justify-end">
                                         <Button
@@ -761,18 +804,18 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment,
                             })}
                           </div>
                         )}
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 items-start">
                           <Textarea
                             placeholder="Add a comment..."
                             value={commentText}
                             onChange={(e) => setCommentText(e.target.value)}
-                            className="min-h-[100px] bg-background resize-none"
+                            className="min-h-[100px] bg-background resize-none max-w-[70%] flex-1"
                           />
                           <Button
                             size="sm"
                             onClick={() => handleAddComment(lead.id)}
                             disabled={!commentText.trim()}
-                            className="h-[100px] px-4 bg-primary hover:bg-primary/90"
+                            className="h-[100px] px-4 bg-primary hover:bg-primary/90 flex-shrink-0"
                           >
                             <Send className="h-4 w-4" />
                           </Button>
