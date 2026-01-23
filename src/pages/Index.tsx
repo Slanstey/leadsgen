@@ -33,48 +33,29 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-// Helper function to parse market cap string to numeric value (in millions)
-const parseMarketCap = (marketCap: string | null | undefined): number | null => {
-  if (!marketCap || marketCap === "Unknown" || marketCap === "null" || marketCap.toLowerCase() === "null") {
-    return null;
-  }
-
-  // Extract number and unit (M or B)
-  const match = marketCap.match(/USD\s*([\d.]+)\s*([MB])/i);
-  if (!match) return null;
-
-  const value = parseFloat(match[1]);
-  const unit = match[2].toUpperCase();
-
-  // Convert to millions
-  if (unit === "B") {
-    return value * 1000;
-  }
-  return value;
-};
-
-// Helper function to check if market cap falls within a bracket
-const marketCapInBracket = (marketCap: string | null | undefined, bracket: string): boolean => {
+// Helper function to check if market cap (in millions) falls within a bracket
+const marketCapInBracket = (marketCap: number | null | undefined, bracket: string): boolean => {
   if (bracket === "unknown") {
-    return !marketCap || marketCap === "Unknown" || marketCap === "null" || marketCap.toLowerCase() === "null";
+    return marketCap === null || marketCap === undefined;
   }
 
-  const value = parseMarketCap(marketCap);
-  if (value === null) return false;
+  if (marketCap === null || marketCap === undefined) {
+    return false;
+  }
 
   switch (bracket) {
     case "under_100m":
-      return value < 100;
+      return marketCap < 100;
     case "100m_500m":
-      return value >= 100 && value < 500;
+      return marketCap >= 100 && marketCap < 500;
     case "500m_1b":
-      return value >= 500 && value < 1000;
+      return marketCap >= 500 && marketCap < 1000;
     case "1b_10b":
-      return value >= 1000 && value < 10000;
+      return marketCap >= 1000 && marketCap < 10000;
     case "10b_50b":
-      return value >= 10000 && value < 50000;
+      return marketCap >= 10000 && marketCap < 50000;
     case "over_50b":
-      return value >= 50000;
+      return marketCap >= 50000;
     default:
       return false;
   }
@@ -249,9 +230,29 @@ const Index = () => {
       // Apply market cap filter
       if (marketCapFilter !== "all") {
         if (marketCapFilter === "unknown") {
-          countQuery = countQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+          countQuery = countQuery.is("market_capitalisation", null);
         } else {
-          countQuery = countQuery.ilike("market_capitalisation", `%${marketCapFilter}%`);
+          // Apply numeric range filters based on bracket
+          switch (marketCapFilter) {
+            case "under_100m":
+              countQuery = countQuery.lt("market_capitalisation", 100);
+              break;
+            case "100m_500m":
+              countQuery = countQuery.gte("market_capitalisation", 100).lt("market_capitalisation", 500);
+              break;
+            case "500m_1b":
+              countQuery = countQuery.gte("market_capitalisation", 500).lt("market_capitalisation", 1000);
+              break;
+            case "1b_10b":
+              countQuery = countQuery.gte("market_capitalisation", 1000).lt("market_capitalisation", 10000);
+              break;
+            case "10b_50b":
+              countQuery = countQuery.gte("market_capitalisation", 10000).lt("market_capitalisation", 50000);
+              break;
+            case "over_50b":
+              countQuery = countQuery.gte("market_capitalisation", 50000);
+              break;
+          }
         }
       }
 
@@ -322,9 +323,29 @@ const Index = () => {
       // Apply market cap filter
       if (marketCapFilter !== "all") {
         if (marketCapFilter === "unknown") {
-          countQuery = countQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+          countQuery = countQuery.is("market_capitalisation", null);
         } else {
-          countQuery = countQuery.ilike("market_capitalisation", `%${marketCapFilter}%`);
+          // Apply numeric range filters based on bracket
+          switch (marketCapFilter) {
+            case "under_100m":
+              countQuery = countQuery.lt("market_capitalisation", 100);
+              break;
+            case "100m_500m":
+              countQuery = countQuery.gte("market_capitalisation", 100).lt("market_capitalisation", 500);
+              break;
+            case "500m_1b":
+              countQuery = countQuery.gte("market_capitalisation", 500).lt("market_capitalisation", 1000);
+              break;
+            case "1b_10b":
+              countQuery = countQuery.gte("market_capitalisation", 1000).lt("market_capitalisation", 10000);
+              break;
+            case "10b_50b":
+              countQuery = countQuery.gte("market_capitalisation", 10000).lt("market_capitalisation", 50000);
+              break;
+            case "over_50b":
+              countQuery = countQuery.gte("market_capitalisation", 50000);
+              break;
+          }
         }
       }
 
@@ -365,8 +386,8 @@ const Index = () => {
 
       // Check if we need client-side filtering (feedback or comment filters)
       // Also need client-side processing when sorting by lastCommentDate (last modified)
+      // Market cap filtering is now done server-side, so we don't need it here
       const needsClientSideFiltering = feedbackFilter !== "all" || commentFilter !== "all" ||
-        (marketCapFilter !== "all" && marketCapFilter !== "unknown") ||
         (sortColumn === "lastCommentDate" && sortDirection !== null);
 
       // Fetch total count first (matching AdminTenantDetail pattern)
@@ -410,8 +431,32 @@ const Index = () => {
         if (companySizeFilter !== "all") {
           allLeadsQuery = allLeadsQuery.eq("company_size_interval", companySizeFilter);
         }
-        if (marketCapFilter !== "all" && marketCapFilter === "unknown") {
-          allLeadsQuery = allLeadsQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+        if (marketCapFilter !== "all") {
+          if (marketCapFilter === "unknown") {
+            allLeadsQuery = allLeadsQuery.is("market_capitalisation", null);
+          } else {
+            // Apply numeric range filters based on bracket
+            switch (marketCapFilter) {
+              case "under_100m":
+                allLeadsQuery = allLeadsQuery.lt("market_capitalisation", 100);
+                break;
+              case "100m_500m":
+                allLeadsQuery = allLeadsQuery.gte("market_capitalisation", 100).lt("market_capitalisation", 500);
+                break;
+              case "500m_1b":
+                allLeadsQuery = allLeadsQuery.gte("market_capitalisation", 500).lt("market_capitalisation", 1000);
+                break;
+              case "1b_10b":
+                allLeadsQuery = allLeadsQuery.gte("market_capitalisation", 1000).lt("market_capitalisation", 10000);
+                break;
+              case "10b_50b":
+                allLeadsQuery = allLeadsQuery.gte("market_capitalisation", 10000).lt("market_capitalisation", 50000);
+                break;
+              case "over_50b":
+                allLeadsQuery = allLeadsQuery.gte("market_capitalisation", 50000);
+                break;
+            }
+          }
         }
 
         // Apply sorting
@@ -508,9 +553,10 @@ const Index = () => {
             warmConnections: lead.warm_connections,
             isConnectedToTenant: lead.is_connected_to_tenant,
             followsOnLinkedin: lead.follows_on_linkedin,
-            marketCapitalisation: lead.market_capitalisation,
+            marketCapitalisation: lead.market_capitalisation ? parseFloat(lead.market_capitalisation) : undefined,
             companySizeInterval: lead.company_size_interval,
             commodityFields: lead.commodity_fields,
+            userFeedbackStatus: lead.user_feedback_status as "good" | "bad" | undefined,
             comments: leadComments,
             createdAt: new Date(lead.created_at || ""),
             updatedAt: new Date(lead.updated_at || ""),
@@ -528,17 +574,10 @@ const Index = () => {
           });
         }
 
-        // Apply feedback filter
+        // Apply feedback filter (using user_feedback_status column)
         if (feedbackFilter !== "all") {
           filteredLeads = filteredLeads.filter((lead) => {
-            const hasFeedback = lead.comments.some((comment) => {
-              const text = comment.text.toLowerCase();
-              return text.includes("marked as") && (
-                (feedbackFilter === "good" && text.includes("good lead")) ||
-                (feedbackFilter === "bad" && text.includes("bad lead"))
-              );
-            });
-            return hasFeedback;
+            return lead.userFeedbackStatus === feedbackFilter;
           });
         }
 
@@ -698,10 +737,30 @@ const Index = () => {
       // Apply market cap filter
       if (marketCapFilter !== "all") {
         if (marketCapFilter === "unknown") {
-          leadsQuery = leadsQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+          leadsQuery = leadsQuery.is("market_capitalisation", null);
+        } else {
+          // Apply numeric range filters based on bracket
+          switch (marketCapFilter) {
+            case "under_100m":
+              leadsQuery = leadsQuery.lt("market_capitalisation", 100);
+              break;
+            case "100m_500m":
+              leadsQuery = leadsQuery.gte("market_capitalisation", 100).lt("market_capitalisation", 500);
+              break;
+            case "500m_1b":
+              leadsQuery = leadsQuery.gte("market_capitalisation", 500).lt("market_capitalisation", 1000);
+              break;
+            case "1b_10b":
+              leadsQuery = leadsQuery.gte("market_capitalisation", 1000).lt("market_capitalisation", 10000);
+              break;
+            case "10b_50b":
+              leadsQuery = leadsQuery.gte("market_capitalisation", 10000).lt("market_capitalisation", 50000);
+              break;
+            case "over_50b":
+              leadsQuery = leadsQuery.gte("market_capitalisation", 50000);
+              break;
+          }
         }
-        // For bracket-based filtering, we'll filter client-side after fetching
-        // since Supabase doesn't easily support parsing string values for numeric comparison
       }
 
       // Apply sorting (skip lastCommentDate as it needs client-side sorting)
@@ -810,6 +869,7 @@ const Index = () => {
           marketCapitalisation: lead.market_capitalisation,
           companySizeInterval: lead.company_size_interval,
           commodityFields: lead.commodity_fields,
+          userFeedbackStatus: lead.user_feedback_status as "good" | "bad" | undefined,
           comments: leadComments,
           createdAt: new Date(lead.created_at || ""),
           updatedAt: new Date(lead.updated_at || ""),
@@ -817,25 +877,13 @@ const Index = () => {
         };
       });
 
-      // Apply market cap bracket filtering client-side (if needed)
+      // Market cap filtering is now done server-side, so no client-side filtering needed
       let filteredLeads = leadsWithComments;
-      if (marketCapFilter !== "all" && marketCapFilter !== "unknown") {
-        filteredLeads = filteredLeads.filter((lead) => {
-          return marketCapInBracket(lead.marketCapitalisation, marketCapFilter);
-        });
-      }
 
-      // Apply feedback filter (good/bad leads based on comments)
+      // Apply feedback filter (using user_feedback_status column)
       if (feedbackFilter !== "all") {
         filteredLeads = filteredLeads.filter((lead) => {
-          const hasFeedback = lead.comments.some((comment) => {
-            const text = comment.text.toLowerCase();
-            return text.includes("marked as") && (
-              (feedbackFilter === "good" && text.includes("good lead")) ||
-              (feedbackFilter === "bad" && text.includes("bad lead"))
-            );
-          });
-          return hasFeedback;
+          return lead.userFeedbackStatus === feedbackFilter;
         });
       }
 
@@ -1006,8 +1054,32 @@ const Index = () => {
         if (companySizeFilter !== "all") {
           allLeadsQuery = allLeadsQuery.eq("company_size_interval", companySizeFilter);
         }
-        if (marketCapFilter !== "all" && marketCapFilter === "unknown") {
-          allLeadsQuery = allLeadsQuery.or("market_capitalisation.is.null,market_capitalisation.eq.Unknown,market_capitalisation.eq.null");
+        if (marketCapFilter !== "all") {
+          if (marketCapFilter === "unknown") {
+            allLeadsQuery = allLeadsQuery.is("market_capitalisation", null);
+          } else {
+            // Apply numeric range filters based on bracket
+            switch (marketCapFilter) {
+              case "under_100m":
+                allLeadsQuery = allLeadsQuery.lt("market_capitalisation", 100);
+                break;
+              case "100m_500m":
+                allLeadsQuery = allLeadsQuery.gte("market_capitalisation", 100).lt("market_capitalisation", 500);
+                break;
+              case "500m_1b":
+                allLeadsQuery = allLeadsQuery.gte("market_capitalisation", 500).lt("market_capitalisation", 1000);
+                break;
+              case "1b_10b":
+                allLeadsQuery = allLeadsQuery.gte("market_capitalisation", 1000).lt("market_capitalisation", 10000);
+                break;
+              case "10b_50b":
+                allLeadsQuery = allLeadsQuery.gte("market_capitalisation", 10000).lt("market_capitalisation", 50000);
+                break;
+              case "over_50b":
+                allLeadsQuery = allLeadsQuery.gte("market_capitalisation", 50000);
+                break;
+            }
+          }
         }
 
         const { data: allLeadsData, error: allLeadsError } = await allLeadsQuery;
@@ -1057,34 +1129,23 @@ const Index = () => {
             warmConnections: lead.warm_connections,
             isConnectedToTenant: lead.is_connected_to_tenant,
             followsOnLinkedin: lead.follows_on_linkedin,
-            marketCapitalisation: lead.market_capitalisation,
+            marketCapitalisation: lead.market_capitalisation ? parseFloat(lead.market_capitalisation) : undefined,
             companySizeInterval: lead.company_size_interval,
             commodityFields: lead.commodity_fields,
+            userFeedbackStatus: lead.user_feedback_status as "good" | "bad" | undefined,
             comments: leadComments,
             createdAt: new Date(lead.created_at || ""),
             updatedAt: new Date(lead.updated_at || ""),
           };
         });
 
-        // Apply market cap bracket filtering
+        // Market cap filtering is now done server-side, so no client-side filtering needed
         let filteredLeads = leadsWithComments;
-        if (marketCapFilter !== "all" && marketCapFilter !== "unknown") {
-          filteredLeads = filteredLeads.filter((lead) => {
-            return marketCapInBracket(lead.marketCapitalisation, marketCapFilter);
-          });
-        }
 
-        // Apply feedback filter
+        // Apply feedback filter (using user_feedback_status column)
         if (feedbackFilter !== "all") {
           filteredLeads = filteredLeads.filter((lead) => {
-            const hasFeedback = lead.comments.some((comment) => {
-              const text = comment.text.toLowerCase();
-              return text.includes("marked as") && (
-                (feedbackFilter === "good" && text.includes("good lead")) ||
-                (feedbackFilter === "bad" && text.includes("bad lead"))
-              );
-            });
-            return hasFeedback;
+            return lead.userFeedbackStatus === feedbackFilter;
           });
         }
 
@@ -1363,6 +1424,17 @@ const Index = () => {
     setEditDateFilter("");
     setEditDateFilterType("on");
     toast.success("All filters cleared");
+  };
+
+  const handleFeedbackUpdate = (leadId: string, feedbackStatus: "good" | "bad") => {
+    // Update local state to reflect the new feedback status
+    setLeads((prevLeads) =>
+      prevLeads.map((lead) =>
+        lead.id === leadId
+          ? { ...lead, userFeedbackStatus: feedbackStatus, updatedAt: new Date() }
+          : lead
+      )
+    );
   };
 
   const handleAddComment = async (leadId: string, commentText: string, skipActivityLog = false) => {
@@ -1681,6 +1753,7 @@ const Index = () => {
           marketCapitalisation: lead.market_capitalisation,
           companySizeInterval: lead.company_size_interval,
           commodityFields: lead.commodity_fields,
+          userFeedbackStatus: lead.user_feedback_status as "good" | "bad" | undefined,
           comments: leadComments,
           createdAt: new Date(lead.created_at || ""),
           updatedAt: new Date(lead.updated_at || ""),
@@ -1701,8 +1774,8 @@ const Index = () => {
 
     try {
       // Check if we need client-side filtering
-      const needsClientSideFiltering = feedbackFilter !== "all" || commentFilter !== "all" ||
-        (marketCapFilter !== "all" && marketCapFilter !== "unknown");
+      // Market cap filtering is now done server-side, so we don't need it here
+      const needsClientSideFiltering = feedbackFilter !== "all" || commentFilter !== "all";
 
       // Fetch ALL leads (no pagination) to apply filters
       let allLeadsQuery = supabase
@@ -1844,6 +1917,7 @@ const Index = () => {
           marketCapitalisation: lead.market_capitalisation,
           companySizeInterval: lead.company_size_interval,
           commodityFields: lead.commodity_fields,
+          userFeedbackStatus: lead.user_feedback_status as "good" | "bad" | undefined,
           comments: leadComments,
           createdAt: new Date(lead.created_at || ""),
           updatedAt: new Date(lead.updated_at || ""),
@@ -1852,26 +1926,13 @@ const Index = () => {
       });
 
       // Apply client-side filters
+      // Market cap filtering is now done server-side, so no client-side filtering needed
       let filteredLeads = allLeadsWithComments;
 
-      // Apply market cap bracket filtering
-      if (marketCapFilter !== "all" && marketCapFilter !== "unknown") {
-        filteredLeads = filteredLeads.filter((lead) => {
-          return marketCapInBracket(lead.marketCapitalisation, marketCapFilter);
-        });
-      }
-
-      // Apply feedback filter
+      // Apply feedback filter (using user_feedback_status column)
       if (feedbackFilter !== "all") {
         filteredLeads = filteredLeads.filter((lead) => {
-          const hasFeedback = lead.comments.some((comment) => {
-            const text = comment.text.toLowerCase();
-            return text.includes("marked as") && (
-              (feedbackFilter === "good" && text.includes("good lead")) ||
-              (feedbackFilter === "bad" && text.includes("bad lead"))
-            );
-          });
-          return hasFeedback;
+          return lead.userFeedbackStatus === feedbackFilter;
         });
       }
 
@@ -2130,7 +2191,7 @@ const Index = () => {
             <div className="relative flex-1 min-w-0">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <Input
-                placeholder="Search contact person..."
+                placeholder="Search lead..."
                 value={contactPersonSearch}
                 onChange={(e) => setContactPersonSearch(e.target.value)}
                 className={cn(
@@ -2516,6 +2577,7 @@ const Index = () => {
             onAddComment={handleAddComment}
             onEditComment={handleEditComment}
             onDeleteComment={handleDeleteComment}
+            onFeedbackUpdate={handleFeedbackUpdate}
             fieldVisibility={fieldVisibility}
             sortColumn={sortColumn}
             sortDirection={sortDirection}

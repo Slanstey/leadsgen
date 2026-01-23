@@ -19,9 +19,10 @@ export interface Lead {
   warmConnections?: string;
   isConnectedToTenant?: boolean;
   followsOnLinkedin?: boolean;
-  marketCapitalisation?: string;
+  marketCapitalisation?: number; // Market cap in millions
   companySizeInterval?: string;
   commodityFields?: string;
+  userFeedbackStatus?: "good" | "bad"; // Most recent user feedback status
   comments: Comment[];
   createdAt: Date;
   updatedAt: Date;

@@ -31,8 +31,26 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { FieldVisibilityConfig, defaultFieldVisibility } from "@/types/tenantPreferences";
 import { logActivity } from "@/lib/activityLogger";
+import { supabase } from "@/integrations/supabase/client";
+import { Tables } from "@/lib/supabaseUtils";
 
 type SortColumn = "companyName" | "contactPerson" | "contactEmail" | "role" | "tier" | "status" | "followsOnLinkedin" | "createdAt" | "marketCapitalisation" | "companySizeInterval" | "lastCommentDate" | null;
+
+// Helper function to format market cap (in millions) for display
+const formatMarketCap = (marketCap: number | null | undefined): string => {
+  if (marketCap === null || marketCap === undefined) {
+    return "-";
+  }
+  
+  if (marketCap >= 1000) {
+    // Display in billions
+    const billions = marketCap / 1000;
+    return `$${billions.toFixed(billions >= 10 ? 0 : 1)}B`;
+  } else {
+    // Display in millions
+    return `$${marketCap.toFixed(marketCap >= 100 ? 0 : 1)}M`;
+  }
+};
 type SortDirection = "asc" | "desc" | null;
 
 const statusConfig: Record<
@@ -86,13 +104,14 @@ interface LeadsTableProps {
   onAddComment: (leadId: string, comment: string, skipActivityLog?: boolean) => void;
   onEditComment?: (commentId: string, newText: string) => void;
   onDeleteComment?: (commentId: string) => void;
+  onFeedbackUpdate?: (leadId: string, feedbackStatus: "good" | "bad") => void;
   fieldVisibility?: FieldVisibilityConfig;
   sortColumn?: SortColumn;
   sortDirection?: SortDirection;
   onSort?: (column: SortColumn) => void;
 }
 
-export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment, onDeleteComment, fieldVisibility, sortColumn = null, sortDirection = null, onSort }: LeadsTableProps) {
+export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment, onDeleteComment, onFeedbackUpdate, fieldVisibility, sortColumn = null, sortDirection = null, onSort }: LeadsTableProps) {
   const { profile } = useAuth();
   const [commentingLead, setCommentingLead] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
@@ -177,23 +196,46 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment,
     const qualityText = quality === "good" ? "good" : "bad";
     const commentText = `Marked as ${qualityText} lead by ${userName}.\n\nReason: ${reason}`;
 
-    // Add comment but skip activity log (we'll log feedback_given instead)
-    onAddComment(selectedLead.id, commentText, true);
+    try {
+      // Update the user_feedback_status column in the database
+      const { error: updateError } = await supabase
+        .from(Tables.LEADS)
+        .update({ user_feedback_status: quality })
+        .eq("id", selectedLead.id)
+        .eq("tenant_id", profile.tenant_id);
 
-    // Log activity
-    await logActivity({
-      leadId: selectedLead.id,
-      lead: selectedLead,
-      actionType: "feedback_given",
-      userId: profile.id,
-      tenantId: profile.tenant_id,
-      metadata: {
-        quality,
-        reason,
-      },
-    });
+      if (updateError) {
+        console.error("Error updating feedback status:", updateError);
+        toast.error("Failed to update feedback status");
+        return;
+      }
 
-    toast.success(`Lead marked as ${qualityText} quality`);
+      // Update local state if callback is provided
+      if (onFeedbackUpdate) {
+        onFeedbackUpdate(selectedLead.id, quality);
+      }
+
+      // Add comment but skip activity log (we'll log feedback_given instead)
+      onAddComment(selectedLead.id, commentText, true);
+
+      // Log activity
+      await logActivity({
+        leadId: selectedLead.id,
+        lead: selectedLead,
+        actionType: "feedback_given",
+        userId: profile.id,
+        tenantId: profile.tenant_id,
+        metadata: {
+          quality,
+          reason,
+        },
+      });
+
+      toast.success(`Lead marked as ${qualityText} quality`);
+    } catch (error) {
+      console.error("Error submitting feedback:", error);
+      toast.error("Failed to submit feedback");
+    }
   };
 
   const handleSort = (column: SortColumn) => {
@@ -557,11 +599,7 @@ export function LeadsTable({ leads, onStatusChange, onAddComment, onEditComment,
                   )}
                   {visibility.marketCapitalisation && (
                     <TableCell className="py-5 px-4 w-[120px]">
-                      {lead.marketCapitalisation ? (
-                        <span className="text-sm">{lead.marketCapitalisation}</span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground/50 italic">-</span>
-                      )}
+                      <span className="text-sm">{formatMarketCap(lead.marketCapitalisation)}</span>
                     </TableCell>
                   )}
                   {visibility.companySizeInterval && (

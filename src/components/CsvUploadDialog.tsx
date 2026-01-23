@@ -64,13 +64,50 @@ interface ProcessedLeadRecord {
     warm_connections?: string;
     is_connected_to_tenant?: boolean;
     follows_on_linkedin?: boolean;
-    market_capitalisation?: string;
+    market_capitalisation?: number; // Market cap in millions (numeric)
     company_size_interval?: string;
     commodity_fields?: string;
     created_at: string;
     updated_at: string;
   };
 }
+
+// Helper function to parse market cap string to numeric value (in millions)
+const parseMarketCapToNumeric = (marketCap: string | null | undefined): number | null => {
+  if (!marketCap || marketCap.trim() === "" || marketCap.toLowerCase() === "unknown" || marketCap.toLowerCase() === "null") {
+    return null;
+  }
+
+  const trimmed = marketCap.trim();
+
+  // If it's already a pure number (like "2300000000"), convert to millions
+  if (/^[0-9]+\.?[0-9]*$/.test(trimmed)) {
+    const value = parseFloat(trimmed);
+    // If value is > 1000, assume it's in dollars, convert to millions
+    // If value is < 1000, assume it's already in millions
+    return value >= 1000 ? value / 1000000.0 : value;
+  }
+
+  // Try to extract number and unit (M or B) from formats like "USD 100M", "$1.5B", etc.
+  const match = trimmed.match(/USD\s*\$?\s*([\d.]+)\s*([MB])/i) || 
+                trimmed.match(/\$?\s*([\d.]+)\s*([MB])/i) ||
+                trimmed.match(/([\d.]+)\s*([MB])/i);
+  
+  if (match) {
+    const value = parseFloat(match[1]);
+    const unit = match[2].toUpperCase();
+    
+    // Convert to millions
+    if (unit === "B") {
+      return value * 1000;
+    } else if (unit === "M") {
+      return value;
+    }
+  }
+
+  // If we can't parse it, return null
+  return null;
+};
 
 export function CsvUploadDialog({
   open,
@@ -552,9 +589,12 @@ export function CsvUploadDialog({
           followsOnLinkedin = rawValue === "true" || rawValue === "1" || rawValue === "yes" || rawValue === "y";
         }
 
-        const marketCapitalisation = columnMapping.market_capitalisation
+        const marketCapitalisationRaw = columnMapping.market_capitalisation
           ? row[columnMapping.market_capitalisation]?.toString().trim() || ""
           : "";
+        
+        // Parse market cap to numeric (in millions)
+        const marketCapitalisation = parseMarketCapToNumeric(marketCapitalisationRaw);
 
         const companySizeInterval = columnMapping.company_size_interval
           ? row[columnMapping.company_size_interval]?.toString().trim() || ""
@@ -614,7 +654,7 @@ export function CsvUploadDialog({
             ...(warmConnections && { warm_connections: warmConnections }),
             is_connected_to_tenant: isConnectedToTenant,
             follows_on_linkedin: followsOnLinkedin,
-            ...(marketCapitalisation && { market_capitalisation: marketCapitalisation }),
+            ...(marketCapitalisation !== null && { market_capitalisation: marketCapitalisation }),
             ...(companySizeInterval && { company_size_interval: companySizeInterval }),
             ...(commodityFields && { commodity_fields: commodityFields }),
             created_at: new Date().toISOString(),
