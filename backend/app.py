@@ -14,6 +14,7 @@ from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 from postgrest.exceptions import APIError as PostgrestAPIError
 import logging
+import asyncio
 
 # Load environment variables FIRST, before any imports that depend on them
 load_dotenv()
@@ -39,7 +40,7 @@ app = FastAPI()
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:3000", "*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -591,40 +592,82 @@ async def signup(request: SignUpRequest):
                     error="Failed to update user profile"
                 )
         else:
-            # Profile doesn't exist - create it
-            try:
-                profile_result = supabase.table("user_profiles").insert({
-                    "id": user_id,
-                    "email": request.email,
-                    "full_name": request.full_name,
-                    "tenant_id": tenant_id,
-                    "created_at": datetime.utcnow().isoformat(),
-                    "updated_at": datetime.utcnow().isoformat()
-                }).execute()
-                
-                if not profile_result.data:
-                    raise Exception("Profile insert returned no data")
-                    
-            except PostgrestAPIError as e:
-                error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
-                error_code = error_dict.get('code', '')
-                
-                # Handle duplicate key error (user profile already exists - likely from trigger)
-                if error_code == '23505':  # Unique violation
-                    logger.warning(f"User profile already exists for {user_id} (likely created by trigger), updating instead")
-                    
-                    # Update existing profile with tenant_id and other info
-                    try:
-                        update_result = supabase.table("user_profiles").update({
-                            "tenant_id": tenant_id,
-                            "email": request.email,
-                            "full_name": request.full_name,
-                            "updated_at": datetime.utcnow().isoformat()
-                        }).eq("id", user_id).execute()
-                        
-                        if not update_result.data:
-                            logger.error(f"Failed to update existing user profile for {user_id}")
-                            # Clean up tenant if update failed
+            # Profile doesn't exist - create it with retry for race condition
+            # The auth user may not be immediately visible due to transaction timing
+            max_retries = 5
+            retry_delay = 0.5  # seconds
+            last_error = None
+
+            for attempt in range(max_retries):
+                try:
+                    profile_result = supabase.table("user_profiles").insert({
+                        "id": user_id,
+                        "email": request.email,
+                        "full_name": request.full_name,
+                        "tenant_id": tenant_id,
+                        "created_at": datetime.utcnow().isoformat(),
+                        "updated_at": datetime.utcnow().isoformat()
+                    }).execute()
+
+                    if not profile_result.data:
+                        raise Exception("Profile insert returned no data")
+
+                    # Success - break out of retry loop
+                    break
+
+                except PostgrestAPIError as e:
+                    error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
+                    error_code = error_dict.get('code', '')
+
+                    # Handle foreign key violation (auth user not yet visible)
+                    if error_code == '23503':
+                        last_error = e
+                        if attempt < max_retries - 1:
+                            logger.warning(f"FK violation on attempt {attempt + 1}, auth user may not be visible yet. Retrying in {retry_delay}s...")
+                            await asyncio.sleep(retry_delay)
+                            retry_delay *= 1.5  # Exponential backoff
+                            continue
+                        else:
+                            logger.error(f"FK violation persisted after {max_retries} attempts")
+                            raise
+
+                    # Handle duplicate key error (user profile already exists - likely from trigger)
+                    elif error_code == '23505':  # Unique violation
+                        logger.warning(f"User profile already exists for {user_id} (likely created by trigger), updating instead")
+
+                        # Update existing profile with tenant_id and other info
+                        try:
+                            update_result = supabase.table("user_profiles").update({
+                                "tenant_id": tenant_id,
+                                "email": request.email,
+                                "full_name": request.full_name,
+                                "updated_at": datetime.utcnow().isoformat()
+                            }).eq("id", user_id).execute()
+
+                            if not update_result.data:
+                                logger.error(f"Failed to update existing user profile for {user_id}")
+                                # Clean up tenant if update failed
+                                if tenant_id:
+                                    try:
+                                        tenant_check = supabase.table("tenants").select("slug").eq("id", tenant_id).execute()
+                                        if tenant_check.data and len(tenant_check.data) > 0:
+                                            tenant_slug = tenant_check.data[0].get("slug", "")
+                                            if tenant_slug.endswith("_privateTenant"):
+                                                supabase.table("tenants").delete().eq("id", tenant_id).execute()
+                                                logger.info(f"Cleaned up orphaned private tenant {tenant_id}")
+                                    except Exception as cleanup_error:
+                                        logger.error(f"Error cleaning up tenant: {cleanup_error}")
+
+                                return SignUpResponse(
+                                    success=False,
+                                    error="Failed to update user profile"
+                                )
+
+                            logger.info(f"Updated existing user profile for {user_id} with tenant {tenant_id}")
+                            break  # Success - exit retry loop
+                        except Exception as update_error:
+                            logger.error(f"Error updating profile: {update_error}")
+                            # Clean up tenant
                             if tenant_id:
                                 try:
                                     tenant_check = supabase.table("tenants").select("slug").eq("id", tenant_id).execute()
@@ -635,35 +678,14 @@ async def signup(request: SignUpRequest):
                                             logger.info(f"Cleaned up orphaned private tenant {tenant_id}")
                                 except Exception as cleanup_error:
                                     logger.error(f"Error cleaning up tenant: {cleanup_error}")
-                            
+
                             return SignUpResponse(
                                 success=False,
                                 error="Failed to update user profile"
                             )
-                        
-                        logger.info(f"Updated existing user profile for {user_id} with tenant {tenant_id}")
-                        # Continue to success response below
-                    except Exception as update_error:
-                        logger.error(f"Error updating profile: {update_error}")
-                        # Clean up tenant
-                        if tenant_id:
-                            try:
-                                tenant_check = supabase.table("tenants").select("slug").eq("id", tenant_id).execute()
-                                if tenant_check.data and len(tenant_check.data) > 0:
-                                    tenant_slug = tenant_check.data[0].get("slug", "")
-                                    if tenant_slug.endswith("_privateTenant"):
-                                        supabase.table("tenants").delete().eq("id", tenant_id).execute()
-                                        logger.info(f"Cleaned up orphaned private tenant {tenant_id}")
-                            except Exception as cleanup_error:
-                                logger.error(f"Error cleaning up tenant: {cleanup_error}")
-                        
-                        return SignUpResponse(
-                            success=False,
-                            error="Failed to update user profile"
-                        )
-                else:
-                    # Re-raise other database errors
-                    raise
+                    else:
+                        # Re-raise other database errors
+                        raise
         
         logger.info(f"Successfully created user {user_id} with tenant {tenant_id}")
         
