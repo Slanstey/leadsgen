@@ -51,7 +51,7 @@ const Settings = () => {
             return;
           }
 
-          const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+          const backendUrl = import.meta.env.VITE_BACKEND_URL || (import.meta.env.PROD ? '' : 'http://localhost:8000');
           
           const response = await fetch(`${backendUrl}/api/linkedin/callback`, {
             method: 'POST',
@@ -158,7 +158,7 @@ const Settings = () => {
         return;
       }
 
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || (import.meta.env.PROD ? '' : 'http://localhost:8000');
       
       // Initiate LinkedIn OAuth flow
       // This will redirect to LinkedIn for authorization

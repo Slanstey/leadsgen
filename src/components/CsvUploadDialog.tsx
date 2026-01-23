@@ -371,7 +371,7 @@ export function CsvUploadDialog({
     if (leadIds.length === 0) return;
 
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || (import.meta.env.PROD ? '' : 'http://localhost:8000');
       const response = await fetch(`${backendUrl}/api/classify-leads-batch`, {
         method: 'POST',
         headers: {
