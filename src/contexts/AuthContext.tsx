@@ -211,9 +211,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (email: string, password: string, fullName: string, organizationName: string) => {
     // Call backend signup endpoint which handles tenant creation/assignment
     // Backend uses service role key to bypass RLS and create tenants
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    //const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
-    const response = await fetch(`${backendUrl}/api/signup`, {
+    const response = await fetch(`/api/signup`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
