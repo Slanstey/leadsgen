@@ -68,7 +68,7 @@ const AdminDashboard = () => {
   const hasLoadedRef = useRef(false);
   const hasRedirectedRef = useRef(false);
 
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || (import.meta.env.PROD ? '' : 'http://localhost:8000');
 
   useEffect(() => {
     // Check if user is admin
