@@ -12,9 +12,7 @@ sys.path.insert(0, os.path.abspath(backend_path))
 # Import the FastAPI app from backend directory
 from app import app
 
-# Create Mangum adapter for Vercel
-from mangum import Mangum
-
-# Vercel expects this handler variable
-handler = Mangum(app, lifespan="off")
+# Vercel's Python runtime automatically detects FastAPI apps
+# Export the app directly - Vercel handles ASGI internally
+# The 'app' variable name is what Vercel looks for
 
