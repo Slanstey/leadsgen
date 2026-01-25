@@ -15,7 +15,6 @@
     ],
     "functions": {
         "api/index.py": {
-            "runtime": "python3.12",
             "includeFiles": "backend/**"
         }
     }
